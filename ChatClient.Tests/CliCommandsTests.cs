@@ -38,8 +38,9 @@ public sealed class CliCommandsTests
         ];
         foreach (var args in invalid)
             Assert.Throws<CliUsageException>(() => CliCommands.Parse(args, false));
-        Assert.Throws<CliUsageException>(() =>
-            CliCommands.Parse(["run", "--agent", "A", "--prompt", "ok"], true));
+        Assert.Equal("ok", CliCommands.Parse(["run", "--agent", "A", "--prompt", "ok"], true).Prompt);
+        Assert.False(CliCommands.Parse(["run", "--agent", "A", "--prompt", "ok"], true).FromStdin);
+        Assert.False(CliCommands.Parse(["run", "--agent", "A", "--prompt-file", "task.md"], true).FromStdin);
     }
 
     [Fact]

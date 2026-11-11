@@ -86,8 +86,10 @@ public static class CliCommands
             throw new CliUsageException("--agent is required.");
         options.TryGetValue("--prompt", out var prompt);
         options.TryGetValue("--prompt-file", out var promptFile);
-        if ((prompt is not null ? 1 : 0) + (promptFile is not null ? 1 : 0) + (stdinRedirected ? 1 : 0) != 1)
-            throw new CliUsageException("Specify exactly one of --prompt, --prompt-file or redirected stdin.");
+        if (prompt is not null && promptFile is not null)
+            throw new CliUsageException("Specify either --prompt or --prompt-file, not both.");
+        if (prompt is null && promptFile is null && !stdinRedirected)
+            throw new CliUsageException("Specify --prompt, --prompt-file or redirected stdin.");
         if (prompt is not null && string.IsNullOrWhiteSpace(prompt))
             throw new CliUsageException("Prompt must not be empty.");
 
@@ -101,7 +103,7 @@ public static class CliCommands
             throw new CliUsageException("--overwrite requires --output.");
 
         return new CliArguments(CliCommandKind.Run, agent, prompt, promptFile,
-            stdinRedirected, workspace, output, overwrite, timeout);
+            prompt is null && promptFile is null && stdinRedirected, workspace, output, overwrite, timeout);
     }
 
     public static bool TryParseTimeout(string? value, out TimeSpan timeout)

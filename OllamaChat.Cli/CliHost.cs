@@ -77,15 +77,41 @@ public static class CliHost
             await Console.Error.WriteLineAsync("Agent execution timed out.");
             return CliExitCodes.Timeout;
         }
-        catch (Exception)
+        catch (Exception ex)
         {
-            // Runtime exceptions may include credentials in message/stack trace.
-            await Console.Error.WriteLineAsync("CLI failed unexpectedly. Check the application diagnostics.");
+            // Do not print exception messages: provider exceptions may contain secrets.
+            var incident = Guid.NewGuid().ToString("N");
+            var path = await TryRecordFailureAsync(incident, ex);
+            await Console.Error.WriteLineAsync(
+                path is null
+                    ? $"Internal CLI error ({incident}). Diagnostic log is unavailable."
+                    : $"Internal CLI error ({incident}). See local diagnostics: {path}");
             return CliExitCodes.InternalError;
         }
         finally
         {
             Console.CancelKeyPress -= onCancel;
+        }
+    }
+
+    private static async Task<string?> TryRecordFailureAsync(string incident, Exception error)
+    {
+        try
+        {
+            var directory = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "OllamaChat", "logs");
+            Directory.CreateDirectory(directory);
+            var path = Path.Combine(directory, "cli-errors.log");
+            // Exception messages and Data are deliberately excluded: they may contain credentials.
+            var details = $"{DateTimeOffset.UtcNow:O} incident={incident} type={error.GetType().FullName}{Environment.NewLine}" +
+                          $"{error.StackTrace}{Environment.NewLine}";
+            await File.AppendAllTextAsync(path, details);
+            return path;
+        }
+        catch (Exception)
+        {
+            return null;
         }
     }
 }
