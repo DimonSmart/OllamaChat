@@ -8,7 +8,16 @@ using ChatClient.Domain.Models;
 
 namespace ChatClient.Api.Services.AgentRuntime;
 
-public sealed record HeadlessAgentRunRequest(Guid AgentId, string Prompt, Guid? WorkspaceId = null, string? DirectPath = null);
+public sealed record HeadlessAgentRunRequest(
+    Guid AgentId,
+    string Prompt,
+    Guid? WorkspaceId = null,
+    string? DirectPath = null,
+    Guid? WorkflowId = null,
+    AgentExecutionPolicy? ExecutionPolicy = null,
+    Guid? SandboxProfileId = null,
+    IReadOnlyDictionary<string, string>? Inputs = null,
+    ServerModelSelection? ModelOverride = null);
 
 public sealed record HeadlessAgentRunResult(
     string AgentName,
@@ -42,27 +51,42 @@ public sealed class HeadlessAgentExecutor(
     IFileAccessProviderProfileService? fileProfiles = null,
     IAgentSkillsProfileService? skillProfiles = null,
     IAgentLaunchCapabilityValidator? modelCapabilities = null,
-    ILogger<HeadlessAgentExecutor>? logger = null) : IHeadlessAgentExecutor
+    ILogger<HeadlessAgentExecutor>? logger = null,
+    ISandboxSessionFactory? sandboxSessionFactory = null) : IHeadlessAgentExecutor
 {
     public async Task<HeadlessAgentRunResult> ExecuteAsync(
         HeadlessAgentRunRequest request, CancellationToken cancellationToken)
     {
-        var reference = new AgentDefinitionReference(AgentDefinitionKind.SavedAgent, request.AgentId.ToString("D"));
+        var policy = request.ExecutionPolicy ?? AgentExecutionPolicy.ScheduledRestricted;
+        var isCli = policy.Mode == AgentExecutionMode.CliNonInteractive;
+        var isWorkflow = request.WorkflowId.HasValue;
+        if (isWorkflow && !isCli)
+            return HeadlessAgentRunResult.Fail("workflow", "headless_capability_unsupported",
+                "Saved Workflows are not permitted by the scheduled execution policy.");
+
+        var reference = isWorkflow
+            ? new AgentDefinitionReference(AgentDefinitionKind.SavedWorkflow, request.WorkflowId!.Value.ToString("D"))
+            : new AgentDefinitionReference(AgentDefinitionKind.SavedAgent, request.AgentId.ToString("D"));
         var descriptor = await catalog.FindAsync(reference, cancellationToken);
         if (descriptor is null)
-            return HeadlessAgentRunResult.Fail(request.AgentId.ToString("D"), "agent_not_found", "Saved Agent was deleted or is unavailable.");
+            return HeadlessAgentRunResult.Fail(reference.Id, "agent_not_found",
+                "Saved definition was deleted or is unavailable.");
 
-        var template = await templates.GetByIdAsync(request.AgentId);
-        if (template is null)
-            return HeadlessAgentRunResult.Fail(descriptor.Name, "agent_not_found", "Saved Agent was deleted or is unavailable.");
+        AgentTemplateDefinition? template = null;
+        if (!isWorkflow)
+        {
+            template = await templates.GetByIdAsync(request.AgentId);
+            if (template is null)
+                return HeadlessAgentRunResult.Fail(descriptor.Name, "agent_not_found",
+                    "Saved Agent was deleted or is unavailable.");
+        }
 
-        // Resolve exactly once before runtime creation, never from a mutable definition mid-run.
         ResolvedWorkspace? workspace;
         try
         {
             if ((request.WorkspaceId.HasValue || request.DirectPath is not null) && workspaceResolver is null)
-                return HeadlessAgentRunResult.Fail(descriptor.Name, "headless_capability_unsupported",
-                    "Saved Workspace resolution is unavailable.");
+                return HeadlessAgentRunResult.Fail(descriptor.Name, "workspace_selection_invalid",
+                    "Workspace resolution is unavailable.");
             workspace = workspaceResolver is null ? null : await workspaceResolver.ResolveAsync(
                 new WorkspaceSelection(WorkspaceId: request.WorkspaceId, DirectPath: request.DirectPath), cancellationToken);
         }
@@ -71,24 +95,30 @@ public sealed class HeadlessAgentExecutor(
             return HeadlessAgentRunResult.Fail(descriptor.Name, ex.Code, ex.Message);
         }
 
-        if (HasUnsupportedCapabilities(template, descriptor))
+        if (!isCli && template is not null && HasUnsupportedCapabilities(template, descriptor))
             return HeadlessAgentRunResult.Fail(descriptor.Name, "headless_capability_unsupported",
-                "This Saved Agent uses capabilities that are not supported by headless execution.");
+                "This Saved Agent uses capabilities that are not supported by scheduled execution.");
 
         FileAccessProviderProfile? pinnedFileProfile = null;
         AgentSkillsProfile? pinnedSkillsProfile = null;
-        if (template.FileAccessProviderProfileId is { } fileId)
+        if (template?.FileAccessProviderProfileId is { } fileId)
         {
             var profile = fileProfiles is null ? null : await fileProfiles.GetByIdAsync(fileId);
             if (profile is null)
                 return HeadlessAgentRunResult.Fail(descriptor.Name, "headless_capability_unsupported",
                     "The selected File Access profile is unavailable.");
-            if (profile.AccessMode != FileAccessMode.ReadOnly)
+            if (!isCli && profile.AccessMode != FileAccessMode.ReadOnly)
                 return HeadlessAgentRunResult.Fail(descriptor.Name, "headless_capability_unsupported",
-                    "Headless execution supports only read-only File Access.");
-            if (profile.RequireReadApproval)
+                    "Scheduled execution supports only read-only File Access.");
+            if (isCli && !policy.AllowRead)
+                return HeadlessAgentRunResult.Fail(descriptor.Name, "policy_read_denied",
+                    "File Access requires --allow-read (or --allow-write).");
+            if (isCli && profile.AccessMode != FileAccessMode.ReadOnly && !policy.AllowWrite)
+                return HeadlessAgentRunResult.Fail(descriptor.Name, "policy_write_denied",
+                    "ReadWrite File Access requires --allow-write.");
+            if (!isCli && profile.RequireReadApproval)
                 return HeadlessAgentRunResult.Fail(descriptor.Name, "interactive_approval_required",
-                    "Headless File Access cannot request interactive read approval.");
+                    "Scheduled File Access cannot request interactive read approval.");
             if (workspace is null)
                 return HeadlessAgentRunResult.Fail(descriptor.Name, "workspace_selection_invalid",
                     "A workspace is required for File Access.");
@@ -98,13 +128,13 @@ public sealed class HeadlessAgentExecutor(
                 Name = profile.Name,
                 Instructions = profile.Instructions,
                 AccessMode = profile.AccessMode,
-                RequireReadApproval = profile.RequireReadApproval,
-                RequireWriteApproval = profile.RequireWriteApproval
+                RequireReadApproval = isCli ? false : profile.RequireReadApproval,
+                RequireWriteApproval = isCli ? false : profile.RequireWriteApproval
             };
         }
 
         var hasDiscoveredSkills = false;
-        if (template.SkillsProviderProfileId is { } skillsId)
+        if (template?.SkillsProviderProfileId is { } skillsId)
         {
             var profile = skillProfiles is null ? null : await skillProfiles.GetByIdAsync(skillsId);
             if (profile is null)
@@ -137,12 +167,53 @@ public sealed class HeadlessAgentExecutor(
             finally { discovered.Source?.Dispose(); }
         }
 
-        var overrides = new AgentSessionOverrides { WorkspacePath = workspace?.Path };
+        if (isCli && template?.EnableShell == true && !policy.AllowShell)
+            return HeadlessAgentRunResult.Fail(descriptor.Name, "policy_shell_denied",
+                "Shell execution requires --allow-shell.");
+        if (isCli && template?.EnableFileMemory == true && !policy.AllowFileMemory)
+            return HeadlessAgentRunResult.Fail(descriptor.Name, "policy_memory_denied",
+                "File Memory requires --allow-file-memory.");
+
+        if (isCli && descriptor.LaunchCapabilities.SupportsSandboxProfile)
+        {
+            if (!policy.AllowShell)
+                return HeadlessAgentRunResult.Fail(descriptor.Name, "policy_shell_denied",
+                    "Shell execution requires --allow-shell.");
+            if (!policy.AllowWrite)
+                return HeadlessAgentRunResult.Fail(descriptor.Name, "policy_write_denied",
+                    "Sandbox shell can modify its mounted workspace; also specify --allow-write.");
+        }
+
+        var inputs = new Dictionary<string, string>(request.Inputs ??
+            new Dictionary<string, string>(), StringComparer.OrdinalIgnoreCase);
+        if (isWorkflow)
+        {
+            foreach (var inputDefinition in descriptor.Inputs)
+            {
+                if (!inputs.ContainsKey(inputDefinition.Key) && inputDefinition.DefaultValue is { } defaultValue)
+                    inputs[inputDefinition.Key] = defaultValue;
+            }
+        }
+
+        var overrides = new AgentSessionOverrides
+        {
+            WorkspacePath = workspace?.Path,
+            SandboxProfileId = request.SandboxProfileId
+        };
         var resolved = await resolver.ResolveAsync(reference,
-            new AgentSessionDefinitionRequest { Overrides = overrides }, cancellationToken);
-        if (!resolved.Validation.CanLaunch || resolved.DefaultModel is null)
-            return HeadlessAgentRunResult.Fail(descriptor.Name, "agent_preflight_failed",
-                "Saved Agent is invalid or its configured model is unavailable. Check the agent settings.");
+            new AgentSessionDefinitionRequest
+            {
+                Overrides = overrides,
+                Inputs = inputs,
+                UiModelSelection = request.ModelOverride ?? new ServerModelSelection(null, null)
+            }, cancellationToken);
+        if (!resolved.Validation.CanLaunch ||
+            (descriptor.ModelRequirement == AgentModelRequirement.Required && resolved.DefaultModel is null))
+        {
+            var reason = resolved.Validation.Problems.FirstOrDefault()?.Message ??
+                "Saved definition or its configured model is unavailable.";
+            return HeadlessAgentRunResult.Fail(descriptor.Name, "agent_preflight_failed", reason);
+        }
 
         if (hasDiscoveredSkills && modelCapabilities is not null &&
             resolved.DefaultModel is { } skillsModel &&
@@ -153,62 +224,102 @@ public sealed class HeadlessAgentExecutor(
         cancellationToken.ThrowIfCancellationRequested();
         var context = contextFactory.CreateRoot(descriptor, conversationId: null);
         var approval = new HeadlessToolApprovalCoordinator();
-        var creation = new AgentRuntimeCreationContext
+        SandboxSessionHandle? sandboxHandle = null;
+        try
         {
-            Configuration = new AppChatConfiguration(resolved.DefaultModel.ModelName, []),
-            DefaultModel = resolved.DefaultModel,
-            Overrides = overrides,
-            PinnedDefinition = descriptor,
-            PinnedSavedAgent = template.Clone(),
-            RuntimeResources = new AgentSessionRuntimeResources
+            if (isCli && descriptor.LaunchCapabilities.SupportsSandboxProfile)
             {
-                IsHeadlessExecution = true,
-                WorkspacePath = workspace?.Path,
-                HeadlessFileAccessProfile = pinnedFileProfile,
-                HeadlessSkillsProfile = pinnedSkillsProfile,
-                ToolApprovalCoordinator = approval,
-                ToolApprovalPolicy = new SessionToolApprovalPolicy()
+                if (request.SandboxProfileId is not Guid sandboxId || workspace is null || sandboxSessionFactory is null)
+                    return HeadlessAgentRunResult.Fail(descriptor.Name, "agent_preflight_failed",
+                        "Shell execution requires a valid workspace and Sandbox Profile.");
+                try
+                {
+                    sandboxHandle = await sandboxSessionFactory.StartAsync(
+                        sandboxId, workspace.Path, context.RunId, cancellationToken);
+                }
+                catch (Exception ex) when (ex is InvalidOperationException or NotSupportedException)
+                {
+                    logger?.LogWarning("CLI sandbox preflight failed. RunId={RunId}, Reason={Type}",
+                        context.RunId, ex.GetType().Name);
+                    return HeadlessAgentRunResult.Fail(descriptor.Name, "sandbox_unavailable",
+                        "The selected Sandbox Profile is unavailable or invalid.", context.RunId);
+                }
             }
-        };
-        var input = new AgentRuntimeRunRequest
-        {
-            InvocationKind = AgentRuntimeInvocationKind.UserMessage,
-            Messages = [new AgentInputMessage(AgentMessageRole.User, request.Prompt)],
-            Inputs = new Dictionary<string, string>(),
-            Attachments = []
-        };
 
-        AgentRunEvent? terminal = null;
-        await foreach (var runEvent in runner.RunAsync(reference, input, creation, context, cancellationToken)
-                           .WithCancellation(cancellationToken))
-        {
-            if (runEvent is AgentRunCompleted or AgentRunFailed)
+            var creation = new AgentRuntimeCreationContext
             {
-                if (terminal is not null)
+                Configuration = new AppChatConfiguration(resolved.DefaultModel?.ModelName ?? string.Empty, []),
+                DefaultModel = resolved.DefaultModel,
+                Overrides = overrides,
+                PinnedDefinition = descriptor,
+                PinnedSavedAgent = template?.Clone(),
+                RuntimeResources = new AgentSessionRuntimeResources
+                {
+                    IsHeadlessExecution = true,
+                    ExecutionPolicy = policy,
+                    RootExecutionId = context.RunId,
+                    WorkspacePath = workspace?.Path,
+                    Sandbox = sandboxHandle?.Instance,
+                    HeadlessFileAccessProfile = pinnedFileProfile,
+                    HeadlessSkillsProfile = pinnedSkillsProfile,
+                    ToolApprovalCoordinator = approval,
+                    ToolApprovalPolicy = new SessionToolApprovalPolicy()
+                }
+            };
+            var runOnStart = isWorkflow && descriptor.LaunchBehavior == AgentLaunchBehavior.RunOnStart &&
+                string.IsNullOrWhiteSpace(request.Prompt);
+            if (!runOnStart && string.IsNullOrWhiteSpace(request.Prompt))
+                return HeadlessAgentRunResult.Fail(descriptor.Name, "invalid_input",
+                    "A non-empty user prompt is required.");
+            var input = new AgentRuntimeRunRequest
+            {
+                InvocationKind = runOnStart
+                    ? AgentRuntimeInvocationKind.RunOnStart
+                    : AgentRuntimeInvocationKind.UserMessage,
+                Messages = runOnStart
+                    ? []
+                    : [new AgentInputMessage(AgentMessageRole.User, request.Prompt)],
+                Inputs = inputs,
+                Attachments = []
+            };
+
+            AgentRunEvent? terminal = null;
+            await foreach (var runEvent in runner.RunAsync(reference, input, creation, context, cancellationToken)
+                               .WithCancellation(cancellationToken))
+            {
+                if (runEvent is AgentRunCompleted or AgentRunFailed)
+                {
+                    if (terminal is not null)
+                        return HeadlessAgentRunResult.Fail(descriptor.Name, "runtime_protocol_violation",
+                            "Agent returned multiple terminal events.", context.RunId);
+                    terminal = runEvent;
+                }
+                else if (terminal is not null)
+                {
                     return HeadlessAgentRunResult.Fail(descriptor.Name, "runtime_protocol_violation",
-                        "Agent returned multiple terminal events.", context.RunId);
-                terminal = runEvent;
+                        "Agent emitted an event after completion.", context.RunId);
+                }
             }
-            else if (terminal is not null)
+
+            if (!isCli && approval.RequestCount != 0)
+                return HeadlessAgentRunResult.Fail(descriptor.Name, "interactive_approval_required",
+                    "Agent requested interactive approval, unavailable for scheduled execution.", context.RunId);
+
+            return terminal switch
             {
-                return HeadlessAgentRunResult.Fail(descriptor.Name, "runtime_protocol_violation",
-                    "Agent emitted an event after completion.", context.RunId);
-            }
+                AgentRunCompleted completed => new HeadlessAgentRunResult(
+                    descriptor.Name, context.RunId, completed.Result.FinalMessage.Content, null, null),
+                AgentRunFailed failed => HeadlessAgentRunResult.Fail(
+                    descriptor.Name, failed.Error.Code, "Agent failed: " + SafeErrorCode(failed.Error.Code), context.RunId),
+                _ => HeadlessAgentRunResult.Fail(descriptor.Name, "runtime_protocol_violation",
+                    "Agent returned no terminal event.", context.RunId)
+            };
         }
-
-        if (approval.RequestCount != 0)
-            return HeadlessAgentRunResult.Fail(descriptor.Name, "interactive_approval_required",
-                "Agent requested interactive approval, which is not available for scheduled execution.", context.RunId);
-
-        return terminal switch
+        finally
         {
-            AgentRunCompleted completed => new HeadlessAgentRunResult(
-                descriptor.Name, context.RunId, completed.Result.FinalMessage.Content, null, null),
-            AgentRunFailed failed => HeadlessAgentRunResult.Fail(
-                descriptor.Name, failed.Error.Code, "Agent failed: " + SafeErrorCode(failed.Error.Code), context.RunId),
-            _ => HeadlessAgentRunResult.Fail(descriptor.Name, "runtime_protocol_violation",
-                "Agent returned no terminal event.", context.RunId)
-        };
+            if (sandboxHandle is not null)
+                await sandboxHandle.DisposeAsync();
+        }
     }
 
     private static string SafeErrorCode(string code)
