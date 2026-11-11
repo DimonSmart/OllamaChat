@@ -234,7 +234,7 @@ public sealed class CliProcessTests
             Assert.Equal(0, process.ExitCode);
             Assert.StartsWith("ID", await stdout);
             Assert.Equal("", await stderr);
-            Assert.False(Directory.Exists(Path.Combine(root, "UserData")));
+            Assert.Empty(Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories));
         }
         finally { Directory.Delete(root, recursive: true); }
     }
