@@ -1,3 +1,4 @@
+using ChatClient.Api.Services;
 using ChatClient.Api.Services.AgentRuntime;
 using ChatClient.Application.Services;
 using ChatClient.Domain.Models;
@@ -187,8 +188,8 @@ public static class CliCommands
             return CliExitCodes.Arguments;
         }
 
-        var agent = matching[0];
-        if (agent.LlmId is not Guid serverId || string.IsNullOrWhiteSpace(agent.ModelName) ||
+        var selectedAgent = matching[0];
+        if (selectedAgent.LlmId is not Guid serverId || string.IsNullOrWhiteSpace(selectedAgent.ModelName) ||
             await services.GetRequiredService<ILlmServerConfigService>().GetByIdAsync(serverId) is null)
         {
             await error.WriteLineAsync("Saved Agent model or LLM server is not configured.");
