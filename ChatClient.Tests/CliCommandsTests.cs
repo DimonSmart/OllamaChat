@@ -343,8 +343,15 @@ public sealed class CliProcessTests
             await process.WaitForExitAsync(deadline.Token);
             var stdout = await stdoutTask;
             var stderr = await stderrTask;
+            var diagnosticsPath = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "OllamaChat", "logs", "cli-errors.log");
+            var diagnosticTail = File.Exists(diagnosticsPath)
+                ? (await File.ReadAllTextAsync(diagnosticsPath))[^Math.Min(
+                    2500, (int)new FileInfo(diagnosticsPath).Length)..]
+                : "no diagnostic log";
             Assert.True(process.ExitCode == 0,
-                $"CLI exited with {process.ExitCode}. stderr: {stderr}");
+                $"CLI exited with {process.ExitCode}. stderr: {stderr}. Diagnostics: {diagnosticTail}");
             Assert.Equal("Process fixture answer", stdout);
             Assert.Equal(string.Empty, stderr);
             await serverTask.WaitAsync(TimeSpan.FromSeconds(10));
