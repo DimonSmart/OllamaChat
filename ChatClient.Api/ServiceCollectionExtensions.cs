@@ -229,7 +229,9 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IAgentRunNestingValidator>(sp => new AgentRunNestingValidator(
             sp.GetRequiredService<IOptions<AgentRuntimeOptions>>().Value));
         services.AddScoped<IAgentRunner, AgentRunner>();
-        services.AddScoped<IHeadlessAgentExecutor, HeadlessAgentExecutor>();
+        services.AddScoped<HeadlessAgentExecutor>();
+        services.AddScoped<IAgentExecutionService>(sp => sp.GetRequiredService<HeadlessAgentExecutor>());
+        services.AddScoped<IHeadlessAgentExecutor>(sp => sp.GetRequiredService<HeadlessAgentExecutor>());
         services.AddScoped<Func<IAgentRunner>>(sp =>
             () => sp.GetRequiredService<IAgentRunner>());
         services.AddScoped<IWorkflowParticipantInvoker, WorkflowParticipantInvoker>();

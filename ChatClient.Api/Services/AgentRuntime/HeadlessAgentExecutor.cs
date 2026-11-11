@@ -37,6 +37,10 @@ public interface IHeadlessAgentExecutor
         HeadlessAgentRunRequest request, CancellationToken cancellationToken);
 }
 
+/// <summary>Shared execution API. The request policy selects restricted scheduled
+/// execution or explicitly authorized noninteractive CLI execution.</summary>
+public interface IAgentExecutionService : IHeadlessAgentExecutor { }
+
 /// <summary>
 /// Each instance belongs to a new execution DI scope. No chat session, saved-chat
 /// service, Blazor circuit, or conversation history is ever constructed.
@@ -52,7 +56,7 @@ public sealed class HeadlessAgentExecutor(
     IAgentSkillsProfileService? skillProfiles = null,
     IAgentLaunchCapabilityValidator? modelCapabilities = null,
     ILogger<HeadlessAgentExecutor>? logger = null,
-    ISandboxSessionFactory? sandboxSessionFactory = null) : IHeadlessAgentExecutor
+    ISandboxSessionFactory? sandboxSessionFactory = null) : IAgentExecutionService
 {
     public async Task<HeadlessAgentRunResult> ExecuteAsync(
         HeadlessAgentRunRequest request, CancellationToken cancellationToken)

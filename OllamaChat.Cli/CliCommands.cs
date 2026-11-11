@@ -337,7 +337,8 @@ public static class CliCommands
         if (options.Progress)
             await error.WriteLineAsync("Starting headless execution...");
 
-        var executor = services.GetRequiredService<IHeadlessAgentExecutor>();
+        var executor = services.GetService<IAgentExecutionService>() ??
+            services.GetRequiredService<IHeadlessAgentExecutor>();
         var result = await executor.ExecuteAsync(
             new HeadlessAgentRunRequest(agentId, prompt, savedWorkspaceId, workspace,
                 workflowId, policy, sandboxId, options.Inputs, modelOverride), cancellationToken);

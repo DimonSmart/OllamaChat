@@ -26,6 +26,7 @@ jobs:
         run: |
           dotnet test ChatClient.Tests/ChatClient.Tests.csproj --no-build --configuration Release --filter-class "ChatClient.Tests.ScheduledTask*"
           dotnet test ChatClient.Tests/ChatClient.Tests.csproj --no-build --configuration Release --filter-class "ChatClient.Tests.HeadlessAgentExecutorTests"
+          dotnet test ChatClient.Tests/ChatClient.Tests.csproj --no-build --configuration Release --filter-class "ChatClient.Tests.SessionWorkspaceAgentFileStoreTests"
           dotnet test ChatClient.Tests/ChatClient.Tests.csproj --no-build --configuration Release --filter-class "ChatClient.Tests.CliCommandsTests"
           dotnet test ChatClient.Tests/ChatClient.Tests.csproj --no-build --configuration Release --filter-class "ChatClient.Tests.CliProcessTests"
           dotnet test ChatClient.Tests/ChatClient.Tests.csproj --no-build --configuration Release --filter-class "ChatClient.Tests.LlmAgentRuntimeTests"
