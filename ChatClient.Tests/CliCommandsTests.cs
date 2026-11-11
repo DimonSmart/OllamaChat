@@ -77,8 +77,8 @@ public sealed class CliCommandsTests
     [Fact]
     public void WorkflowLookupRejectsAmbiguousNames()
     {
-        var first = new SavedWorkflowDefinition { DisplayName = "Research" };
-        var second = new SavedWorkflowDefinition { DisplayName = "research" };
+        var first = new SavedWorkflowDefinition { Id = Guid.NewGuid(), DisplayName = "Research" };
+        var second = new SavedWorkflowDefinition { Id = Guid.NewGuid(), DisplayName = "research" };
         Assert.Equal(2, CliCommands.FindWorkflows([first, second], "RESEARCH").Count);
         Assert.Single(CliCommands.FindWorkflows([first, second], first.Id.ToString("D")));
     }
