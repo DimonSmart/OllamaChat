@@ -8,7 +8,7 @@ using ChatClient.Domain.Models;
 
 namespace ChatClient.Api.Services.AgentRuntime;
 
-public sealed record HeadlessAgentRunRequest(Guid AgentId, string Prompt, Guid? WorkspaceId = null);
+public sealed record HeadlessAgentRunRequest(Guid AgentId, string Prompt, Guid? WorkspaceId = null, string? DirectPath = null);
 
 public sealed record HeadlessAgentRunResult(
     string AgentName,
@@ -60,11 +60,11 @@ public sealed class HeadlessAgentExecutor(
         ResolvedWorkspace? workspace;
         try
         {
-            if (request.WorkspaceId.HasValue && workspaceResolver is null)
+            if ((request.WorkspaceId.HasValue || request.DirectPath is not null) && workspaceResolver is null)
                 return HeadlessAgentRunResult.Fail(descriptor.Name, "headless_capability_unsupported",
                     "Saved Workspace resolution is unavailable.");
             workspace = workspaceResolver is null ? null : await workspaceResolver.ResolveAsync(
-                new WorkspaceSelection(WorkspaceId: request.WorkspaceId), cancellationToken);
+                new WorkspaceSelection(WorkspaceId: request.WorkspaceId, DirectPath: request.DirectPath), cancellationToken);
         }
         catch (WorkspaceException ex)
         {
@@ -91,7 +91,7 @@ public sealed class HeadlessAgentExecutor(
                     "Headless File Access cannot request interactive read approval.");
             if (workspace is null)
                 return HeadlessAgentRunResult.Fail(descriptor.Name, "workspace_selection_invalid",
-                    "A saved workspace is required for File Access.");
+                    "A workspace is required for File Access.");
             pinnedFileProfile = new FileAccessProviderProfile
             {
                 Id = profile.Id,
@@ -113,7 +113,7 @@ public sealed class HeadlessAgentExecutor(
             if ((profile.IncludeClaudeSkills || profile.FileSources.Any(source =>
                 !Path.IsPathFullyQualified(source.Directory))) && workspace is null)
                 return HeadlessAgentRunResult.Fail(descriptor.Name, "workspace_selection_invalid",
-                    "Workspace-relative Skills require a saved workspace.");
+                    "Workspace-relative Skills require a workspace.");
             pinnedSkillsProfile = new AgentSkillsProfile
             {
                 Id = profile.Id,

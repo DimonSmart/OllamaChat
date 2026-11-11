@@ -50,6 +50,21 @@ public static class ServiceCollectionExtensions
         return services;
     }
 
+    /// <summary>
+    /// Registers the existing headless agent runtime without UI, Quartz,
+    /// application seeders or hosted knowledge indexing.
+    /// </summary>
+    public static IServiceCollection AddCliAgentServices(this IServiceCollection services)
+    {
+        services.AddSingleton(TimeProvider.System);
+        services.AddCoreServices();
+        services.AddPersistenceServices();
+        services.AddRagServices(startBackgroundIndexer: false);
+        services.AddAgenticServices();
+        services.AddHttpClients();
+        return services;
+    }
+
     private static IServiceCollection AddCoreServices(this IServiceCollection services)
     {
         services.AddSingleton<IWorkflowDefinitionCompiler, WorkflowDefinitionCompiler>();
@@ -146,7 +161,7 @@ public static class ServiceCollectionExtensions
         return services;
     }
 
-    private static IServiceCollection AddRagServices(this IServiceCollection services)
+    private static IServiceCollection AddRagServices(this IServiceCollection services, bool startBackgroundIndexer = true)
     {
         services.AddOptions<KnowledgeIngestionOptions>()
             .BindConfiguration(KnowledgeIngestionOptions.SectionName);
@@ -158,7 +173,8 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IKnowledgeIndexProgressTracker, KnowledgeIndexProgressTracker>();
         services.AddSingleton<KnowledgeIndexBackgroundService>();
         services.AddSingleton<IKnowledgeIndexBackgroundService>(sp => sp.GetRequiredService<KnowledgeIndexBackgroundService>());
-        services.AddHostedService(sp => sp.GetRequiredService<KnowledgeIndexBackgroundService>());
+        if (startBackgroundIndexer)
+            services.AddHostedService(sp => sp.GetRequiredService<KnowledgeIndexBackgroundService>());
         services.AddScoped<IKnowledgeSearchService, KnowledgeSearchService>();
         services.AddScoped<ChatToolbarState>();
         services.AddSingleton<HarnessTelemetryListenerHub>();
