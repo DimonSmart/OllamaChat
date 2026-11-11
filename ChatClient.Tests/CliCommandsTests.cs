@@ -351,7 +351,7 @@ public sealed class CliProcessTests
                 : "no diagnostic log";
             var incidentOffset = diagnosticText.LastIndexOf(" incident=", StringComparison.Ordinal);
             var diagnosticTail = incidentOffset >= 0
-                ? diagnosticText[diagnosticText.LastIndexOf('\n', incidentOffset) + 1..]
+                ? diagnosticText[(diagnosticText.LastIndexOf('\n', incidentOffset) + 1)..]
                 : diagnosticText;
             diagnosticTail = diagnosticTail.Length > 2500
                 ? diagnosticTail[..500] + diagnosticTail[^2000..]
