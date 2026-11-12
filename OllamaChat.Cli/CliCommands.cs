@@ -190,7 +190,7 @@ public static class CliCommands
 
     private static CliArguments ParseConfig(string[] args)
     {
-        if (args.Length < 3 || args[1] is not ("set" or "unset" or "show"))
+        if (args.Length < 2 || args[1] is not ("set" or "unset" or "show"))
             throw new CliUsageException("Expected config set, unset, or show.");
         var action = args[1];
         var local = args.Contains("--local");
