@@ -97,9 +97,9 @@ internal sealed class UserProfileStore
         var hasValuesObject = root.TryGetProperty("values", out var stored) &&
                               stored.ValueKind == JsonValueKind.Object;
         needsMigration = hasValuesObject || root.EnumerateObject().Any(static property =>
-            property.Name.Equals("serverDescription", StringComparison.OrdinalIgnoreCase) ||
-            property.Name.Equals("definitions", StringComparison.OrdinalIgnoreCase) ||
-            property.Name.Equals("memories", StringComparison.OrdinalIgnoreCase));
+            (property.Name.Equals("definitions", StringComparison.OrdinalIgnoreCase) ||
+             property.Name.Equals("memories", StringComparison.OrdinalIgnoreCase)) &&
+             property.Value.ValueKind == JsonValueKind.Array);
         return hasValuesObject ? NormalizeJson(stored) : needsMigration
             ? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
             : NormalizeJson(root);
