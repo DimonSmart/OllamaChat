@@ -83,7 +83,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IAppToolCatalog, AppToolCatalog>();
         services.AddSingleton<McpSamplingService>();
         services.AddSingleton<IMcpUserInteractionService, McpUserInteractionService>();
-        services.AddSingleton<UserProfilePreferencesEditorService>();
+        services.AddSingleton<UserProfileEditorService>();
         services.AddSingleton<TaskSessionStore>();
         services.AddSingleton<MarkdownDocumentIntakeService>();
         services.AddSingleton<IOllamaClientService, OllamaService>();

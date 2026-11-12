@@ -12,77 +12,54 @@ namespace ChatClient.Tests;
 public sealed class UserProfilePrefsMcpServerIntegrationTests
 {
     [Fact]
-    public async Task UserMemoryServer_ProvidesExplicitDurablePreferenceAndMemoryOperations()
+    public async Task UserProfileServer_ExposesExactlyThreeTools_AndPersistsAfterRestart()
     {
-        await using var fixture = new UserProfilePrefsMcpFixture();
+        await using var fixture = new UserProfileMcpFixture();
         var client = await fixture.CreateClientAsync();
-        var toolMap = (await client.ListToolsAsync(cancellationToken: TestContext.Current.CancellationToken))
+        var tools = (await client.ListToolsAsync(cancellationToken: TestContext.Current.CancellationToken))
             .ToDictionary(static tool => tool.Name, StringComparer.OrdinalIgnoreCase);
 
-        Assert.Contains("prefs_set", toolMap.Keys);
-        Assert.Contains("prefs_delete", toolMap.Keys);
-        Assert.Contains("memory_remember", toolMap.Keys);
-        Assert.Contains("memory_search", toolMap.Keys);
-        Assert.Contains("memory_list", toolMap.Keys);
-        Assert.Contains("memory_forget", toolMap.Keys);
+        Assert.Equal(3, tools.Count);
+        Assert.Equal(new[] { "profile_get", "profile_get_all", "profile_set" },
+            tools.Keys.OrderBy(static name => name, StringComparer.Ordinal).ToArray());
+        Assert.DoesNotContain("prefs_get", tools.Keys);
+        Assert.DoesNotContain("memory_remember", tools.Keys);
 
-        var missing = GetStructuredContent(await CallToolAsync(
-            toolMap["prefs_get"],
-            new Dictionary<string, object?>
-            {
-                ["key"] = "displayName"
-            }));
+        var missing = GetStructuredContent(await CallToolAsync(tools["profile_get"],
+            new() { ["key"] = "unknown" }));
         Assert.False(GetProperty(missing, "exists").GetBoolean());
-        Assert.False(TryGetProperty(missing, "value", out _));
+        Assert.Equal(JsonValueKind.Null, GetProperty(missing, "value").ValueKind);
 
-        await CallToolAsync(toolMap["prefs_set"], new Dictionary<string, object?>
-        {
-            ["key"] = "displayName",
-            ["value"] = "Alice"
-        });
-        await CallToolAsync(toolMap["prefs_set"], new Dictionary<string, object?>
-        {
-            ["key"] = "displayName",
-            ["value"] = "Dmitry"
-        });
+        var empty = GetStructuredContent(await CallToolAsync(tools["profile_get_all"], []));
+        Assert.Empty(GetProperty(empty, "values").EnumerateObject());
 
-        var remembered = GetStructuredContent(await CallToolAsync(
-            toolMap["memory_remember"],
-            new Dictionary<string, object?> { ["text"] = "User works primarily with .NET." }));
-        var memoryId = GetProperty(remembered, "id").GetString();
-        Assert.False(string.IsNullOrWhiteSpace(memoryId));
+        var set = GetStructuredContent(await CallToolAsync(tools["profile_set"],
+            new() { ["key"] = " DisplayName ", ["value"] = " Dmitry " }));
+        Assert.False(GetProperty(set, "deleted").GetBoolean());
+        Assert.Equal("Dmitry", GetProperty(set, "value").GetString());
 
         client = await fixture.RecreateClientAsync();
-        toolMap = (await client.ListToolsAsync(cancellationToken: TestContext.Current.CancellationToken))
+        tools = (await client.ListToolsAsync(cancellationToken: TestContext.Current.CancellationToken))
             .ToDictionary(static tool => tool.Name, StringComparer.OrdinalIgnoreCase);
-
-        var stored = GetStructuredContent(await CallToolAsync(
-            toolMap["prefs_get"],
-            new Dictionary<string, object?> { ["key"] = "displayName" }));
+        var stored = GetStructuredContent(await CallToolAsync(tools["profile_get"],
+            new() { ["key"] = "displayname" }));
         Assert.True(GetProperty(stored, "exists").GetBoolean());
         Assert.Equal("Dmitry", GetProperty(stored, "value").GetString());
 
-        var search = GetStructuredContent(await CallToolAsync(
-            toolMap["memory_search"],
-            new Dictionary<string, object?> { ["query"] = ".net" }));
-        Assert.Single(GetProperty(search, "memories").EnumerateArray());
+        var all = GetStructuredContent(await CallToolAsync(tools["profile_get_all"], []));
+        Assert.Equal("Dmitry", GetProperty(GetProperty(all, "values"), "DisplayName").GetString());
 
-        await CallToolAsync(toolMap["prefs_delete"], new Dictionary<string, object?> { ["key"] = "displayName" });
-        await CallToolAsync(toolMap["memory_forget"], new Dictionary<string, object?> { ["id"] = memoryId });
+        var deletion = GetStructuredContent(await CallToolAsync(tools["profile_set"],
+            new() { ["key"] = "DISPLAYNAME", ["value"] = " " }));
+        Assert.True(GetProperty(deletion, "deleted").GetBoolean());
+        Assert.Equal(JsonValueKind.Null, GetProperty(deletion, "value").ValueKind);
+        await CallToolAsync(tools["profile_set"], new() { ["key"] = "displayName", ["value"] = null });
 
-        var afterDelete = GetStructuredContent(await CallToolAsync(
-            toolMap["prefs_get"],
-            new Dictionary<string, object?> { ["key"] = "displayName" }));
-        Assert.False(GetProperty(afterDelete, "exists").GetBoolean());
-
-        var memories = GetStructuredContent(await CallToolAsync(toolMap["memory_list"], []));
-        Assert.Empty(GetProperty(memories, "memories").EnumerateArray());
-
-        var storedDocument = await fixture.ReadStoredProfileAsync();
-        Assert.False(storedDocument.Values.ContainsKey("displayName"));
-        Assert.Empty(storedDocument.Memories);
-        Assert.Contains(storedDocument.Definitions, static definition =>
-            string.Equals(definition.Key, "displayName", StringComparison.OrdinalIgnoreCase));
+        var after = GetStructuredContent(await CallToolAsync(tools["profile_get_all"], []));
+        Assert.Empty(GetProperty(after, "values").EnumerateObject());
+        var raw = await File.ReadAllTextAsync(fixture.ProfilePath);
+        using var document = JsonDocument.Parse(raw);
+        Assert.Equal(JsonValueKind.Object, document.RootElement.ValueKind);
     }
 
     private static async Task<JsonElement> CallToolAsync(McpClientTool tool, Dictionary<string, object?> arguments)
@@ -93,40 +70,29 @@ public sealed class UserProfilePrefsMcpServerIntegrationTests
 
     private static JsonElement GetStructuredContent(JsonElement toolResult)
     {
-        if (TryGetProperty(toolResult, "structuredContent", out var structuredContent))
-        {
-            return TryGetProperty(structuredContent, "result", out var payload)
-                ? payload
-                : structuredContent;
-        }
-
-        throw new Xunit.Sdk.XunitException($"Tool result does not contain structuredContent: {toolResult}");
+        if (TryGetProperty(toolResult, "structuredContent", out var structured))
+            return TryGetProperty(structured, "result", out var result) ? result : structured;
+        throw new Xunit.Sdk.XunitException($"Tool result has no structuredContent: {toolResult}");
     }
 
-    private static JsonElement GetProperty(JsonElement element, string propertyName)
+    private static JsonElement GetProperty(JsonElement element, string name)
     {
-        if (TryGetProperty(element, propertyName, out var value))
-        {
+        if (TryGetProperty(element, name, out var value))
             return value;
-        }
-
-        throw new Xunit.Sdk.XunitException($"Property '{propertyName}' was not found in {element}");
+        throw new Xunit.Sdk.XunitException($"Property '{name}' missing: {element}");
     }
 
-    private static bool TryGetProperty(JsonElement element, string propertyName, out JsonElement value)
+    private static bool TryGetProperty(JsonElement element, string name, out JsonElement value)
     {
-        if (element.ValueKind == JsonValueKind.Object &&
-            element.TryGetProperty(propertyName, out value))
+        if (element.ValueKind == JsonValueKind.Object)
         {
-            return true;
-        }
-
-        foreach (var property in element.EnumerateObject())
-        {
-            if (string.Equals(property.Name, propertyName, StringComparison.OrdinalIgnoreCase))
+            foreach (var property in element.EnumerateObject())
             {
-                value = property.Value;
-                return true;
+                if (string.Equals(property.Name, name, StringComparison.OrdinalIgnoreCase))
+                {
+                    value = property.Value;
+                    return true;
+                }
             }
         }
 
@@ -134,34 +100,24 @@ public sealed class UserProfilePrefsMcpServerIntegrationTests
         return false;
     }
 
-    private sealed class UserProfilePrefsMcpFixture : IAsyncDisposable
+    private sealed class UserProfileMcpFixture : IAsyncDisposable
     {
         private const string StorageRootEnvVar = "OLLAMACHAT_STORAGE_ROOT";
-
         private readonly DirectoryInfo _storageRoot = Directory.CreateDirectory(
             Path.Combine(Path.GetTempPath(), "user-profile-mcp", Guid.NewGuid().ToString("N")));
-        private readonly ILoggerFactory _loggerFactory = LoggerFactory.Create(static builder => builder.AddDebug().SetMinimumLevel(LogLevel.Debug));
+        private readonly ILoggerFactory _loggerFactory = LoggerFactory.Create(static builder => builder.AddDebug());
         private readonly string? _originalStorageRoot = Environment.GetEnvironmentVariable(StorageRootEnvVar);
         private McpClient? _client;
 
-        public UserProfilePrefsMcpFixture()
-        {
+        public UserProfileMcpFixture() =>
             Environment.SetEnvironmentVariable(StorageRootEnvVar, _storageRoot.FullName);
-        }
 
-        public async Task<UserProfilePreferencesDocument> ReadStoredProfileAsync()
-        {
-            var json = await File.ReadAllTextAsync(ProfilePath);
-            return JsonSerializer.Deserialize<UserProfilePreferencesDocument>(json, new JsonSerializerOptions(JsonSerializerDefaults.Web))
-                   ?? throw new Xunit.Sdk.XunitException("Stored user profile document could not be deserialized.");
-        }
+        public string ProfilePath => Path.Combine(_storageRoot.FullName, "UserData", "user_profile.json");
 
         public async Task<McpClient> CreateClientAsync()
         {
             if (_client is not null)
-            {
                 return _client;
-            }
 
             var assemblyPath = ResolveServerAssemblyPath();
             var binding = new McpServerSessionBinding
@@ -183,81 +139,43 @@ public sealed class UserProfilePrefsMcpServerIntegrationTests
                     _loggerFactory),
                 clientOptions: new McpClientOptions
                 {
-                    ClientInfo = new Implementation
-                    {
-                        Name = "UserProfilePrefsMcpServerIntegrationTests",
-                        Version = "1.0.0"
-                    },
+                    ClientInfo = new Implementation { Name = "UserProfileMcpTests", Version = "1.0.0" },
                     Capabilities = new ClientCapabilities()
                 },
                 loggerFactory: _loggerFactory,
                 cancellationToken: CancellationToken.None);
-
             return _client;
         }
 
         public async Task<McpClient> RecreateClientAsync()
         {
             if (_client is not null)
-            {
                 await _client.DisposeAsync();
-                _client = null;
-            }
-
+            _client = null;
             return await CreateClientAsync();
         }
 
         public async ValueTask DisposeAsync()
         {
             if (_client is not null)
-            {
                 await _client.DisposeAsync();
-            }
-
             Environment.SetEnvironmentVariable(StorageRootEnvVar, _originalStorageRoot);
-
-            try
-            {
-                if (_storageRoot.Exists)
-                {
-                    _storageRoot.Delete(recursive: true);
-                }
-            }
-            catch
-            {
-            }
-
+            if (_storageRoot.Exists)
+                _storageRoot.Delete(recursive: true);
             _loggerFactory.Dispose();
         }
-
-        private string ProfilePath => Path.Combine(_storageRoot.FullName, "UserData", "user_profile.json");
 
         private static string ResolveServerAssemblyPath()
         {
             var localCopy = Path.Combine(AppContext.BaseDirectory, "ChatClient.Api.dll");
             if (File.Exists(localCopy))
-            {
                 return localCopy;
-            }
-
             var projectOutput = Path.GetFullPath(Path.Combine(
-                AppContext.BaseDirectory,
-                "..",
-                "..",
-                "..",
-                "..",
-                "ChatClient.Api",
-                "bin",
-                "Debug",
-                "net10.0",
-                "ChatClient.Api.dll"));
-
+                AppContext.BaseDirectory, "..", "..", "..", "..",
+                "ChatClient.Api", "bin", "Debug", "net10.0", "ChatClient.Api.dll"));
             if (File.Exists(projectOutput))
-            {
                 return projectOutput;
-            }
-
-            throw new FileNotFoundException("Unable to locate ChatClient.Api.dll for built-in MCP server integration test.");
+            throw new FileNotFoundException("Unable to locate ChatClient.Api.dll for MCP tests.");
         }
     }
 }
