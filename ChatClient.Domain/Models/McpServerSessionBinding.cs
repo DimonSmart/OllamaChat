@@ -92,6 +92,33 @@ public sealed class McpServerSessionBinding
             : trimmed;
     }
 
+
+    // The old delete-only and free-text memory permissions cannot be mapped safely
+    // to profile_set: that would grant broader write access than the user selected.
+    public IReadOnlyList<string> GetCompatibleSelectedTools()
+    {
+        if (ServerId != Guid.Parse("c8c4a3cf-e2d5-4f4d-9a6f-4504e322a2b3") &&
+            !string.Equals(ServerName?.Trim(), "Built-in User Memory MCP Server", StringComparison.OrdinalIgnoreCase))
+        {
+            return SelectedTools;
+        }
+
+        return SelectedTools.Select(static name => name.Trim().ToLowerInvariant() switch
+            {
+                "prefs_get" => "profile_get",
+                "prefs_get_all" => "profile_get_all",
+                "prefs_set" => "profile_set",
+                "profile_get" => "profile_get",
+                "profile_get_all" => "profile_get_all",
+                "profile_set" => "profile_set",
+                _ => null
+            })
+            .Where(static name => name is not null)
+            .Select(static name => name!)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
     public McpServerSessionBinding Clone()
     {
         return new McpServerSessionBinding
@@ -102,7 +129,7 @@ public sealed class McpServerSessionBinding
             DisplayName = DisplayName,
             Enabled = Enabled,
             SelectAllTools = SelectAllTools,
-            SelectedTools = [.. SelectedTools],
+            SelectedTools = [.. GetCompatibleSelectedTools()],
             Roots = [.. Roots],
             Parameters = new Dictionary<string, string?>(Parameters, StringComparer.OrdinalIgnoreCase)
         };
