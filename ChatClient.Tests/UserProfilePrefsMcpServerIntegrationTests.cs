@@ -28,6 +28,7 @@ public sealed class UserProfilePrefsMcpServerIntegrationTests
         var missing = GetStructuredContent(await CallToolAsync(tools["profile_get"],
             new() { ["key"] = "unknown" }));
         Assert.False(GetProperty(missing, "exists").GetBoolean());
+        Assert.Equal(JsonValueKind.Null, GetProperty(missing, "value").ValueKind);
 
         var empty = GetStructuredContent(await CallToolAsync(tools["profile_get_all"], []));
         Assert.Empty(GetProperty(empty, "values").EnumerateObject());
@@ -51,6 +52,7 @@ public sealed class UserProfilePrefsMcpServerIntegrationTests
         var deletion = GetStructuredContent(await CallToolAsync(tools["profile_set"],
             new() { ["key"] = "DISPLAYNAME", ["value"] = " " }));
         Assert.True(GetProperty(deletion, "deleted").GetBoolean());
+        Assert.Equal(JsonValueKind.Null, GetProperty(deletion, "value").ValueKind);
         await CallToolAsync(tools["profile_set"], new() { ["key"] = "displayName", ["value"] = null });
 
         var after = GetStructuredContent(await CallToolAsync(tools["profile_get_all"], []));
