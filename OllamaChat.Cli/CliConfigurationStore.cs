@@ -1,6 +1,7 @@
 using ChatClient.Infrastructure.Helpers;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.FileProviders;
+using Microsoft.Extensions.FileProviders.Physical;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 
@@ -54,7 +55,7 @@ public sealed class CliConfigurationStore
     {
         var directory = Path.GetDirectoryName(path)!;
         return Directory.Exists(directory)
-            ? builder.AddJsonFile(new PhysicalFileProvider(directory), Path.GetFileName(path),
+            ? builder.AddJsonFile(new PhysicalFileProvider(directory, ExclusionFilters.None), Path.GetFileName(path),
                 optional: true, reloadOnChange: false)
             : builder;
     }
