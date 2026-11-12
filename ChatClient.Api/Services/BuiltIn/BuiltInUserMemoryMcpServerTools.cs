@@ -1,5 +1,6 @@
 using ModelContextProtocol.Server;
 using System.ComponentModel;
+using System.Text.Json;
 
 namespace ChatClient.Api.Services.BuiltIn;
 
@@ -24,7 +25,7 @@ public sealed class BuiltInUserMemoryMcpServerTools
             throw new ArgumentException("User profile key must not be empty.", nameof(key));
 
         var (exists, value) = await UserProfileStore.Default.GetAsync(normalizedKey, cancellationToken);
-        return new { key = normalizedKey, exists, value };
+        return JsonSerializer.SerializeToElement(new { key = normalizedKey, exists, value });
     }
 
     [McpServerTool(Name = "profile_get_all", ReadOnly = true, UseStructuredContent = true)]
@@ -40,6 +41,6 @@ public sealed class BuiltInUserMemoryMcpServerTools
         CancellationToken cancellationToken = default)
     {
         var result = await UserProfileStore.Default.SetAsync(key, value, cancellationToken);
-        return new { key = result.Key, value = result.Value, deleted = result.Deleted };
+        return JsonSerializer.SerializeToElement(new { key = result.Key, value = result.Value, deleted = result.Deleted });
     }
 }
