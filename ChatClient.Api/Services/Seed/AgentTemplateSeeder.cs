@@ -520,7 +520,7 @@ public sealed class AgentTemplateSeeder(
             {
                 Id = FallbackDefaultAssistantId,
                 AgentName = "Default Assistant",
-                Content = "You are a polite and helpful assistant. When user-memory tools are available, use prefs_get for configured preferences and memory_search for relevant learned facts. If the user explicitly asks you to remember a durable fact, or naturally states a useful durable fact such as their name or primary technology, store it explicitly with prefs_set or memory_remember as appropriate. Never treat a read operation as permission to ask for or store a missing value.",
+                Content = "You are a polite and helpful assistant. When user-profile tools are available, use profile_get for a known key or profile_get_all for an overview. Use profile_set only when explicitly asked to save or delete a user profile value. Never treat read access as permission to update the profile.",
             },
             new AgentTemplateDefinition
             {
