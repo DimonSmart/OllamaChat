@@ -14,6 +14,17 @@ public static class CliHost
         Console.OutputEncoding = new UTF8Encoding(false);
         Console.InputEncoding = new UTF8Encoding(false);
 
+        // No arguments plus a piped task is a valid short invocation.
+        TextReader taskInput = Console.In;
+        if (args.Length == 0 && Console.IsInputRedirected)
+        {
+            var piped = await Console.In.ReadToEndAsync();
+            if (!string.IsNullOrWhiteSpace(piped))
+            {
+                args = ["run", "--stdin"];
+                taskInput = new StringReader(piped);
+            }
+        }
         CliArguments command;
         try
         {
@@ -102,7 +113,7 @@ public static class CliHost
             using var host = builder.Build();
             await using var scope = host.Services.CreateAsyncScope();
             var code = await CliCommands.ExecuteAsync(command, scope.ServiceProvider,
-                Console.In, Console.Out, Console.Error, cancellation.Token);
+                taskInput, Console.Out, Console.Error, cancellation.Token);
             cancellation.Token.ThrowIfCancellationRequested();
             return code;
         }
