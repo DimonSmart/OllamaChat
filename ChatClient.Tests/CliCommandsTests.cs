@@ -23,22 +23,27 @@ public sealed class CliCommandsTests
         var command = CliCommands.Parse(["run", "--agent", "A", "--prompt", "hello", "--timeout", "1h"], false);
         Assert.Equal(TimeSpan.FromHours(1), command.Timeout);
         Assert.Equal("hello", command.Prompt);
-        Assert.Equal(TimeSpan.FromMinutes(15),
+        Assert.Equal(TimeSpan.Zero,
             CliCommands.Parse(["run", "--agent", "A", "--prompt-file", "task.md"], false).Timeout);
+        Assert.Equal("Fix", CliCommands.Parse(["Fix"], false).Prompt);
+        Assert.Equal("Reviewer", CliCommands.Parse(["-a", "Reviewer", "Fix"], false).Agent);
+        Assert.Equal(CliCommandKind.Config, CliCommands.Parse(["config", "show"], false).Kind);
         Assert.True(CliCommands.Parse(["run", "--agent", "A"], true).FromStdin);
         Assert.Equal(CliCommandKind.ListAgents, CliCommands.Parse(["agents", "list"], false).Kind);
         Assert.Equal(CliCommandKind.Help, CliCommands.Parse(["--help"], false).Kind);
 
         string[][] invalid =
         [
-            ["run", "--prompt", "hello"],
-            ["run", "--agent", "A"],
             ["run", "--agent", "A", "--prompt", " "],
             ["run", "--agent", "A", "--prompt", "ok", "--prompt-file", "file"],
             ["run", "--agent", "A", "--prompt", "ok", "--timeout", "0s"],
             ["run", "--agent", "A", "--prompt", "ok", "--timeout", "abc"],
             ["run", "--agent", "A", "--prompt", "ok", "--no-such-option"],
-            ["run", "--agent", "A", "--prompt", "ok", "--overwrite"]
+            ["run", "--agent", "A", "--prompt", "ok", "--overwrite"],
+            ["run", "--agent", "A", "--prompt", "ok", "--allow-mcp", "WebSearch:search"],
+            ["run", "--agent", "A", "--prompt", "ok", "--no-mcp"],
+            ["run", "--agent", "A", "--prompt", "ok", "--prompt-file", "task.txt"],
+            ["run", "--agent", "A", "--prompt", "ok", "another"]
         ];
         foreach (var args in invalid)
             Assert.Throws<CliUsageException>(() => CliCommands.Parse(args, false));
@@ -53,7 +58,7 @@ public sealed class CliCommandsTests
         var command = CliCommands.Parse([
             "run", "--workflow", "Review", "--input", "reviewMode=standard",
             "--allow-read", "--allow-write", "--allow-shell",
-            "--allow-mcp", "WebSearch:search", "--sandbox", "Dev",
+            "--sandbox", "Dev",
             "--workspace-id", Guid.NewGuid().ToString("D")
         ], stdinRedirected: true);
 
@@ -61,7 +66,6 @@ public sealed class CliCommandsTests
         Assert.Null(command.Agent);
         Assert.False(command.FromStdin);
         Assert.Equal("standard", command.Inputs["reviewMode"]);
-        Assert.Equal(["WebSearch:search"], command.AllowedMcpTools);
         Assert.True(command.AllowRead);
         Assert.True(command.AllowWrite);
         Assert.True(command.AllowShell);
@@ -70,10 +74,6 @@ public sealed class CliCommandsTests
             CliCommands.Parse(["run", "--agent", "A", "--workflow", "B", "--prompt", "p"], false));
         Assert.Throws<CliUsageException>(() =>
             CliCommands.Parse(["run", "--workflow", "W", "--input", "a=1", "--input", "a=2"], false));
-        Assert.Throws<CliUsageException>(() =>
-            CliCommands.Parse(["run", "--agent", "A", "--prompt", "p", "--allow-shell"], false));
-        Assert.Throws<CliUsageException>(() =>
-            CliCommands.Parse(["run", "--workflow", "W", "--server", "server"], false));
         Assert.Throws<CliUsageException>(() =>
             CliCommands.Parse(["run", "--workflow", "W", "--stdin"], false));
     }
@@ -157,6 +157,30 @@ public sealed class CliCommandsTests
             Assert.Equal("Review", seen.Prompt);
             Assert.Equal(Path.GetFullPath("."), seen.DirectPath);
             Assert.Null(seen.WorkspaceId);
+        }
+    }
+
+    [Fact]
+    public async Task ModelOnlyOverrideInheritsSavedAgentServer()
+    {
+        var agent = new AgentTemplateDefinition { AgentName = "Developer", ModelName = "old-model" };
+        var (provider, executor) = CreateServices([agent]);
+        HeadlessAgentRunRequest? seen = null;
+        executor.Setup(e => e.ExecuteAsync(It.IsAny<HeadlessAgentRunRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((HeadlessAgentRunRequest request, CancellationToken _) =>
+            {
+                seen = request;
+                return new HeadlessAgentRunResult("Developer", null, "ok", null, null);
+            });
+        using (provider)
+        {
+            var result = await CliCommands.ExecuteAsync(
+                CliCommands.Parse(["--agent", "Developer", "--model", "new-model", "Hello"], false),
+                provider, TextReader.Null, new StringWriter(), new StringWriter(),
+                TestContext.Current.CancellationToken);
+            Assert.Equal(CliExitCodes.Success, result);
+            Assert.Equal(agent.LlmId, seen!.ModelOverride?.ServerId);
+            Assert.Equal("new-model", seen.ModelOverride?.ModelName);
         }
     }
 

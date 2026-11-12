@@ -14,6 +14,17 @@ public static class CliHost
         Console.OutputEncoding = new UTF8Encoding(false);
         Console.InputEncoding = new UTF8Encoding(false);
 
+        // No arguments plus a piped task is a valid short invocation.
+        TextReader taskInput = Console.In;
+        if (args.Length == 0 && Console.IsInputRedirected)
+        {
+            var piped = await Console.In.ReadToEndAsync();
+            if (!string.IsNullOrWhiteSpace(piped))
+            {
+                args = ["run", "--stdin"];
+                taskInput = new StringReader(piped);
+            }
+        }
         CliArguments command;
         try
         {
@@ -32,6 +43,7 @@ public static class CliHost
             return CliExitCodes.Success;
         }
 
+        var initialWorkingDirectory = Directory.GetCurrentDirectory();
         using var cancellation = new CancellationTokenSource();
         var interrupted = false;
         ConsoleCancelEventHandler onCancel = (_, e) =>
@@ -43,9 +55,6 @@ public static class CliHost
         Console.CancelKeyPress += onCancel;
         try
         {
-            if (command.Kind == CliCommandKind.Run)
-                cancellation.CancelAfter(command.Timeout);
-
             // The generic host is built but deliberately never started: no web host,
             // scheduler, indexer or other IHostedService is run.
             var builder = Host.CreateApplicationBuilder(new HostApplicationBuilderSettings
@@ -61,13 +70,50 @@ public static class CliHost
             {
                 ["McpSampling:Disabled"] = "true"
             });
+            try
+            {
+                var settings = new CliConfigurationStore(builder.Configuration, initialWorkingDirectory);
+                if (command.Kind == CliCommandKind.Config)
+                {
+                    switch (command.ConfigAction)
+                    {
+                        case "set":
+                            settings.Set(command.ConfigKey!, command.ConfigValue!, command.ConfigLocal);
+                            break;
+                        case "unset":
+                            settings.Unset(command.ConfigKey!, command.ConfigLocal);
+                            break;
+                        case "show":
+                            await Console.Out.WriteLineAsync(settings.Show(command.ConfigLocal, command.ConfigEffective));
+                            break;
+                    }
+                    return CliExitCodes.Success;
+                }
+                if (command.Kind == CliCommandKind.Run)
+                {
+                    command = settings.Resolve(command);
+                    if (command.Agent is not null && command.Prompt is null &&
+                        command.PromptFile is null && !command.FromStdin)
+                    {
+                        await Console.Out.WriteLineAsync(CliCommands.HelpText);
+                        return CliExitCodes.Success;
+                    }
+                    cancellation.CancelAfter(command.Timeout);
+                }
+            }
+            catch (CliUsageException ex)
+            {
+                await Console.Error.WriteLineAsync(ex.Message);
+                return CliExitCodes.Arguments;
+            }
+
             builder.Logging.ClearProviders();
             builder.Logging.AddDebug();
             builder.Services.AddCliAgentServices();
             using var host = builder.Build();
             await using var scope = host.Services.CreateAsyncScope();
             var code = await CliCommands.ExecuteAsync(command, scope.ServiceProvider,
-                Console.In, Console.Out, Console.Error, cancellation.Token);
+                taskInput, Console.Out, Console.Error, cancellation.Token);
             cancellation.Token.ThrowIfCancellationRequested();
             return code;
         }

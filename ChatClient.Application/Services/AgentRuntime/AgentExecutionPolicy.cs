@@ -1,5 +1,3 @@
-using System.Collections.Immutable;
-
 namespace ChatClient.Application.Services.AgentRuntime;
 
 /// <summary>
@@ -20,24 +18,16 @@ public sealed record AgentExecutionPolicy
     public bool AllowWrite { get; init; }
     public bool AllowShell { get; init; }
     public bool AllowFileMemory { get; init; }
-    public ImmutableHashSet<string> AllowedMcpTools { get; init; } =
-        ImmutableHashSet.Create<string>(StringComparer.OrdinalIgnoreCase);
-
     public static AgentExecutionPolicy ScheduledRestricted { get; } =
         new() { Mode = AgentExecutionMode.ScheduledRestricted, AllowRead = true };
 
     public static AgentExecutionPolicy Cli(
-        bool allowRead, bool allowWrite, bool allowShell, bool allowFileMemory,
-        IEnumerable<string> allowedMcpTools) => new()
+        bool allowRead, bool allowWrite, bool allowShell, bool allowFileMemory) => new()
     {
         Mode = AgentExecutionMode.CliNonInteractive,
         AllowRead = allowRead || allowWrite,
         AllowWrite = allowWrite,
         AllowShell = allowShell,
-        AllowFileMemory = allowFileMemory,
-        AllowedMcpTools = allowedMcpTools
-            .Where(static name => !string.IsNullOrWhiteSpace(name))
-            .Select(static name => name.Trim())
-            .ToImmutableHashSet(StringComparer.OrdinalIgnoreCase)
+        AllowFileMemory = allowFileMemory
     };
 }

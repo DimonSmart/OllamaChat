@@ -130,76 +130,96 @@ The `backend` development launch profile binds to that loopback address, **does 
 
 ### Command-line agent execution
 
-`OllamaChat.Cli` runs an existing Saved Agent or Saved Workflow as a one-shot
-process without launching the browser UI, web server, Quartz scheduler or
-knowledge indexer. It uses the same saved configurations and Microsoft Agent
-Framework runtime as the GUI. Configure agents, workflows and profiles in the
-GUI before using the CLI.
+`OllamaChat.Cli` executes existing Saved Agents or Workflows using the same
+runtime as the UI, without starting a browser, ASP.NET server, or scheduler.
 
 ```bash
 dotnet build OllamaChat.Cli/OllamaChat.Cli.csproj
 dotnet run --project OllamaChat.Cli -- agents list
-dotnet run --project OllamaChat.Cli -- run --agent "Reviewer" --prompt "Review this code"
-dotnet run --project OllamaChat.Cli -- run --agent "Developer" --workspace ./Project \
-  --sandbox DevelopmentSandbox --allow-write --allow-shell \
-  --prompt "Fix the build and run tests" --timeout 30m --output result.md
-dotnet run --project OllamaChat.Cli -- run --workflow "ResearchWorkflow" \
-  --input topic=agents --prompt "Research this topic"
-dotnet run --project OllamaChat.Cli -- run --agent "Researcher" \
-  --allow-mcp WebSearch:search --prompt "Find relevant sources"
+dotnet run --project OllamaChat.Cli -- config set server LocalOllama
+dotnet run --project OllamaChat.Cli -- config set model gpt-oss:20b
+dotnet run --project OllamaChat.Cli -- config set agent Developer
+dotnet run --project OllamaChat.Cli -- "Fix the build"
+dotnet run --project OllamaChat.Cli -- -a Reviewer "Review this code"
+dotnet run --project OllamaChat.Cli -- run --workflow ResearchWorkflow --input topic=agents
 ```
 
-Published CLI binaries can be invoked as `ollamachat`. Select Saved Agents
-with `--agent NAME_OR_GUID` and Saved Workflows with `--workflow NAME_OR_GUID`.
-Names are case-insensitive; use the GUID if several definitions have the same
-name. The two selectors are mutually exclusive. A prompt can be supplied with
-`--prompt`, `--prompt-file`, or (for agents) redirected stdin. Explicit
-prompt options take precedence over redirected stdin. To read stdin for a
-workflow, pass `--stdin`; autonomous `RunOnStart` workflows can run without a
-prompt when all required `--input KEY=VALUE` options are supplied.
+Published binaries can be called as `ollamachat`. The short prompt syntax
+and the original `run` form are equivalent. Saved Agent and Workflow selection is
+mutually exclusive. Names are case-insensitive; use GUIDs to disambiguate.
 
-**Explicit, execution-local permissions:**
+**Configuration precedence** (lowest to highest):
 
-- `--allow-read` enables configured File Access reads; `--allow-write`
-  enables configured writes and implies read. Both still require a matching
-  provider profile and a valid `--workspace DIR` or `--workspace-id GUID`.
-- `--allow-shell` and `--allow-write`, together with a valid `--sandbox
-  NAME_OR_GUID`, enable the existing Docker Sandbox for shell-enabled
-  agents. Host-shell fallback is forbidden. Docker must be available.
-- Repeat `--allow-mcp SERVER:TOOL` for individual MCP tools, or use
-  `binding:GUID:TOOL` where several bindings expose the same server/tool.
-  An MCP grant never creates a binding or enables unconfigured tools.
-- `--allow-file-memory` allows configured File Memory in a root-run-scoped
-  namespace; it does not grant access to unrelated root runs. Other
-  configured capabilities (Background Agents, RAG, compaction, Skills,
-  TODO and Agent Modes) retain their saved definitions and are constrained
-  by the root CLI execution policy.
-- `--server NAME_OR_GUID --model MODEL` overrides the default model
-  selection without updating Saved Agents. `--progress` emits minimal
-  lifecycle status to stderr.
+1. Global `<StorageRoot>/UserData/cli_settings.json`, where StorageRoot is resolved
+   by the existing storage configuration or `OLLAMACHAT_STORAGE_ROOT`.
+2. `.ollamachat.json` in the caller's **current** directory (no parent traversal).
+3. Explicit command-line flags, affecting only the current invocation.
 
-Interactive UI approvals cannot be used by CLI runs. Tool access is denied
-by default and grants do not persist between runs. Scheduled Tasks retain
-their original restricted policy and do not inherit CLI permissions.
+Files are optional, regular JSON, and settings inherit individually. Supported
+keys are `agent`, `workflow`, `server`, `model`, `workspace`,
+`workspaceId`, `sandbox`, `timeout`, `progress`, `inputs`, and global
+`permissions` (`read`, `write`, `shell`, `fileMemory`). Project
+permissions may **reduce**, but never increase, global permissions; explicit
+flags may authorize more for the current invocation, still constrained by the
+Saved Agent and its profiles. The project JSON is never used as application,
+host, secret or storage configuration.
 
-Timeout defaults to 15 minutes (e.g. `30s`, `15m`, `1h`). `--output`
-does not overwrite existing files without `--overwrite`. Successful stdout
-contains only the terminal answer, diagnostics go to stderr. Unexpected
-runtime exceptions are recorded in a local diagnostic log with a reference
-ID, omitting exception messages that could contain secrets.
+```json
+{
+  "agent": "Developer",
+  "server": "LocalOllama",
+  "model": "gpt-oss:20b",
+  "timeout": "1h",
+  "permissions": {
+    "read": true,
+    "write": true,
+    "shell": true
+  }
+}
+```
+
+Set and inspect settings without editing the files:
+
+```bash
+ollamachat config set agent Reviewer --local
+ollamachat config set model qwen3:8b --local
+ollamachat config show
+ollamachat config show --local
+ollamachat config show --effective
+ollamachat config unset model --local
+```
+
+A workspace defaults to `Directory.GetCurrentDirectory()`. Relative workspace
+paths in local configuration and command arguments resolve against the caller's
+current directory. Saved Workspace IDs remain supported. A selected server or
+model may be overridden independently; the missing component inherits from the
+Saved Agent, if available. Invalid or ambiguous configurations fail preflight.
+
+**MCP tools are controlled solely by each Saved Agent's MCP bindings.**
+Enabled bindings, selected tools, binding parameters and stored secrets are
+loaded through the existing app services. In workflows each participant retains
+its own bindings. There is no CLI MCP allowlist or MCP configuration; use the
+existing UI to add or change MCP servers. The legacy `--allow-mcp` and
+`--no-mcp` flags are rejected with an explanatory error.
+
+File Access still requires permission (read/write) and a matching provider
+profile. Shell requires both write and shell permission, an existing Sandbox
+Profile, and Docker; host-shell fallback remains forbidden. An MCP operation
+that needs interactive approval cannot bypass that approval in headless mode.
+A configured File Memory permission remains root-run-scoped. Scheduled Tasks
+retain their separate restricted policy.
+
+Prompt sources remain `--prompt`, `--prompt-file`, redirected stdin for
+agents, and explicit `--stdin` for workflows. Autonomous workflows can
+run without a prompt if their definition allows it. `--output` preserves its
+no-overwrite default. Timeout defaults to 15 minutes and can be set with
+`--timeout` (e.g. `30s`, `15m`, `1h`). stdout contains only
+the answer, while diagnostics and progress are written to stderr.
 
 Exit codes: 0 success, 1 internal error, 2 invalid arguments, 3 configuration
 or preflight failure, 4 runtime failure, 5 file I/O failure, 124 timeout,
 130 Ctrl+C.
 
-`OLLAMACHAT_STORAGE_ROOT` or `Storage:RootPath` selects shared storage.
-Appsettings are loaded from the CLI build/publish directory; relative
-workspace, input and output paths resolve against the caller's current
-directory. A workspace alone never grants additional permissions.
-Cancellation is cooperative for managed code. Sandbox cleanup closes
-run-owned resources; external dependencies ignoring cancellation can delay
-process exit. Real-model smoke tests require local Ollama, appropriate
-Saved Agents, and Docker where applicable.
 
 ### Your First Chat
 
