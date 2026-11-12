@@ -1,0 +1,6 @@
+[
+  {
+    "title": "List agents",
+    "command": "dotnet OllamaChat.Cli\\bin\\Release\\net10.0\\ollamachat.dll agents list"
+  }
+]
