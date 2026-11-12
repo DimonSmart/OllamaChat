@@ -161,6 +161,30 @@ public sealed class CliCommandsTests
     }
 
     [Fact]
+    public async Task ModelOnlyOverrideInheritsSavedAgentServer()
+    {
+        var agent = new AgentTemplateDefinition { AgentName = "Developer", ModelName = "old-model" };
+        var (provider, executor) = CreateServices([agent]);
+        HeadlessAgentRunRequest? seen = null;
+        executor.Setup(e => e.ExecuteAsync(It.IsAny<HeadlessAgentRunRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((HeadlessAgentRunRequest request, CancellationToken _) =>
+            {
+                seen = request;
+                return new HeadlessAgentRunResult("Developer", null, "ok", null, null);
+            });
+        using (provider)
+        {
+            var result = await CliCommands.ExecuteAsync(
+                CliCommands.Parse(["--agent", "Developer", "--model", "new-model", "Hello"], false),
+                provider, TextReader.Null, new StringWriter(), new StringWriter(),
+                TestContext.Current.CancellationToken);
+            Assert.Equal(CliExitCodes.Success, result);
+            Assert.Equal(agent.LlmId, seen!.ModelOverride?.ServerId);
+            Assert.Equal("new-model", seen.ModelOverride?.ModelName);
+        }
+    }
+
+    [Fact]
     public async Task MapsPreflightAndRuntimeErrorsWithoutEchoingSecrets()
     {
         var (provider, executor) = CreateServices([new AgentTemplateDefinition { AgentName = "A" }]);
