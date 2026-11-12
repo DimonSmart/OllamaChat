@@ -481,7 +481,7 @@
                 changed = true;
             }
 
-            var normalizedSelectedTools = binding.SelectedTools
+            var normalizedSelectedTools = binding.GetCompatibleSelectedTools()
                 .Select(static toolName => toolName?.Trim())
                 .Where(static toolName => !string.IsNullOrWhiteSpace(toolName))
                 .Distinct(StringComparer.OrdinalIgnoreCase)
@@ -715,7 +715,7 @@
                 var availableToolNames = filteredTools
                     .Select(static tool => tool.ToolName)
                     .ToHashSet(StringComparer.OrdinalIgnoreCase);
-                var pruned = binding.SelectedTools
+                var pruned = binding.GetCompatibleSelectedTools()
                     .Where(availableToolNames.Contains)
                     .Distinct(StringComparer.OrdinalIgnoreCase)
                     .ToList();
@@ -978,7 +978,7 @@
 
     private static bool IsToolSelected(McpServerSessionBinding binding, string toolName)
     {
-        return binding.SelectedTools.Contains(toolName, StringComparer.OrdinalIgnoreCase);
+        return binding.GetCompatibleSelectedTools().Contains(toolName, StringComparer.OrdinalIgnoreCase);
     }
 
     private Task NotifyChangedAsync() =>
