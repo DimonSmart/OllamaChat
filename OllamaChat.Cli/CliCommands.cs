@@ -330,7 +330,7 @@ public static class CliCommands
 
         if (selectedAgent is not null && options.Server is null &&
             (selectedAgent.LlmId is not Guid agentServerId ||
-             string.IsNullOrWhiteSpace(selectedAgent.ModelName) ||
+             (string.IsNullOrWhiteSpace(selectedAgent.ModelName) && options.Model is null) ||
              await services.GetRequiredService<ILlmServerConfigService>()
                  .GetByIdAsync(agentServerId) is null))
         {
@@ -355,18 +355,8 @@ public static class CliCommands
                 }
                 serverId = matchedId;
             }
-            if (serverId is not Guid resolvedId)
-            {
-                await error.WriteLineAsync("Model override requires a configured LLM server.");
-                return CliExitCodes.Preflight;
-            }
-            var model = options.Model ?? selectedAgent?.ModelName;
-            if (string.IsNullOrWhiteSpace(model))
-            {
-                await error.WriteLineAsync("Model name is not configured.");
-                return CliExitCodes.Preflight;
-            }
-            modelOverride = new ServerModelSelection(resolvedId, model);
+            modelOverride = new ServerModelSelection(serverId,
+                options.Model ?? selectedAgent?.ModelName);
         }
 
         Guid? sandboxId = null;
