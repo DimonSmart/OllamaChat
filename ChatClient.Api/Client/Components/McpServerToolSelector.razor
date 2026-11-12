@@ -199,7 +199,7 @@
         var availableToolNames = _tools
             .Select(static tool => tool.ToolName)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var normalizedSelection = Binding.SelectedTools
+        var normalizedSelection = Binding.GetCompatibleSelectedTools()
             .Where(availableToolNames.Contains)
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
