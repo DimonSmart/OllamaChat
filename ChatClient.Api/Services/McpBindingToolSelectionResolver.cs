@@ -60,7 +60,7 @@ public static class McpBindingToolSelectionResolver
                 return true;
             }
 
-            if (binding.SelectedTools.Contains(tool.ToolName, StringComparer.OrdinalIgnoreCase))
+            if (binding.GetCompatibleSelectedTools().Contains(tool.ToolName, StringComparer.OrdinalIgnoreCase))
             {
                 return true;
             }
