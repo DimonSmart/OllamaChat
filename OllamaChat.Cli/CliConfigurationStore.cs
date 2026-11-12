@@ -50,9 +50,14 @@ public sealed class CliConfigurationStore
         }
     }
 
-    private static IConfigurationBuilder AddFile(IConfigurationBuilder builder, string path) =>
-        builder.AddJsonFile(new PhysicalFileProvider(Path.GetDirectoryName(path)!),
-            Path.GetFileName(path), optional: true, reloadOnChange: false);
+    private static IConfigurationBuilder AddFile(IConfigurationBuilder builder, string path)
+    {
+        var directory = Path.GetDirectoryName(path)!;
+        return Directory.Exists(directory)
+            ? builder.AddJsonFile(new PhysicalFileProvider(directory), Path.GetFileName(path),
+                optional: true, reloadOnChange: false)
+            : builder;
+    }
 
     private static string? Value(IConfiguration config, string key) =>
         config[key] is { Length: > 0 } value ? value : null;
