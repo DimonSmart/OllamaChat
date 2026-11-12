@@ -275,8 +275,6 @@ public sealed class AgenticRuntimeAgentFactory(
             IReadOnlyList<AppToolDescriptor> availableTools = supportsFunctions
                 ? await appToolCatalog.ListToolsAsync(toolRequestContext, cancellationToken)
                 : [];
-            if (isCliExecution)
-                availableTools = FilterCliMcpTools(availableTools, executionPolicy!);
             var requestedFunctions = ResolveRequestedFunctionNames(
                 request.Configuration,
                 effectiveMcpBindings,
@@ -1147,27 +1145,6 @@ public sealed class AgenticRuntimeAgentFactory(
         }
 
         return false;
-    }
-
-    private static IReadOnlyList<AppToolDescriptor> FilterCliMcpTools(
-        IReadOnlyList<AppToolDescriptor> tools, AgentExecutionPolicy policy)
-    {
-        if (policy.AllowedMcpTools.Count == 0)
-            return [];
-
-        // A short SERVER:TOOL permission is valid only when it uniquely resolves
-        // across the current agent's configured bindings. Binding-qualified names
-        // are always unambiguous.
-        var baseNameCounts = tools
-            .Where(static tool => tool.BaseQualifiedName is not null)
-            .GroupBy(static tool => tool.BaseQualifiedName!, StringComparer.OrdinalIgnoreCase)
-            .ToDictionary(static group => group.Key, static group => group.Count(),
-                StringComparer.OrdinalIgnoreCase);
-        return tools.Where(tool =>
-            policy.AllowedMcpTools.Contains(tool.QualifiedName) ||
-            (tool.BaseQualifiedName is { } baseName &&
-                baseNameCounts.GetValueOrDefault(baseName) == 1 &&
-                policy.AllowedMcpTools.Contains(baseName))).ToArray();
     }
 
     internal static IReadOnlyList<string> ResolveRequestedFunctionNames(
