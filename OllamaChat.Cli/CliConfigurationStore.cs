@@ -227,9 +227,12 @@ public sealed class CliConfigurationStore
         var root = ReadDocument(path);
         if (permission)
         {
-            var permissions = root["permissions"] as JsonObject ?? new JsonObject();
+            if (root["permissions"] is not JsonObject permissions)
+            {
+                permissions = new JsonObject();
+                root["permissions"] = permissions;
+            }
             permissions[key["permissions.".Length..]] = bool.Parse(value);
-            root["permissions"] = permissions;
         }
         else root[key] = key.Equals("progress", StringComparison.OrdinalIgnoreCase)
             ? JsonValue.Create(bool.Parse(value)) : JsonValue.Create(value);
