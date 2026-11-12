@@ -203,7 +203,7 @@ public sealed class CliConfigurationStore
 
     public void Set(string key, string value, bool local)
     {
-        if (!Settings.Contains(key) || key.Equals("inputs", StringComparison.OrdinalIgnoreCase))
+        if (!IsConfigurableKey(key))
             throw new CliUsageException("Unknown or unsupported config key: " + key);
         if (string.IsNullOrWhiteSpace(value))
             throw new CliUsageException("Config value cannot be empty.");
@@ -234,6 +234,15 @@ public sealed class CliConfigurationStore
             }
             permissions[key["permissions.".Length..]] = bool.Parse(value);
         }
+        else if (key.StartsWith("inputs.", StringComparison.OrdinalIgnoreCase))
+        {
+            if (root["inputs"] is not JsonObject inputs)
+            {
+                inputs = new JsonObject();
+                root["inputs"] = inputs;
+            }
+            inputs[key["inputs.".Length..]] = value;
+        }
         else root[key] = key.Equals("progress", StringComparison.OrdinalIgnoreCase)
             ? JsonValue.Create(bool.Parse(value)) : JsonValue.Create(value);
 
@@ -258,9 +267,23 @@ public sealed class CliConfigurationStore
                 if (permissions.Count == 0) root.Remove("permissions");
             }
         }
+        else if (key.StartsWith("inputs.", StringComparison.OrdinalIgnoreCase))
+        {
+            if (root["inputs"] is JsonObject inputs)
+            {
+                inputs.Remove(key["inputs.".Length..]);
+                if (inputs.Count == 0) root.Remove("inputs");
+            }
+        }
         else root.Remove(key);
         WriteDocument(path, root);
     }
+
+    private static bool IsConfigurableKey(string key) =>
+        (Settings.Contains(key) && !key.Equals("inputs", StringComparison.OrdinalIgnoreCase)) ||
+        (key.StartsWith("inputs.", StringComparison.OrdinalIgnoreCase) &&
+         key.Length > "inputs.".Length &&
+         !key.Contains(':'));
 
     private static JsonObject ReadDocument(string path)
     {
