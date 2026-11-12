@@ -111,14 +111,14 @@ public sealed class HeadlessSavedWorkspaceTests
 
         var denied = await fixture.Executor.ExecuteAsync(
             new HeadlessAgentRunRequest(fixture.AgentId, "Write", fixture.WorkspaceId,
-                ExecutionPolicy: AgentExecutionPolicy.Cli(true, false, false, false, [])),
+                ExecutionPolicy: AgentExecutionPolicy.Cli(true, false, false, false)),
             TestContext.Current.CancellationToken);
         Assert.Equal("policy_write_denied", denied.ErrorCode);
         Assert.Null(creation);
 
         var allowed = await fixture.Executor.ExecuteAsync(
             new HeadlessAgentRunRequest(fixture.AgentId, "Write", fixture.WorkspaceId,
-                ExecutionPolicy: AgentExecutionPolicy.Cli(false, true, false, false, [])),
+                ExecutionPolicy: AgentExecutionPolicy.Cli(false, true, false, false)),
             TestContext.Current.CancellationToken);
         Assert.True(allowed.Succeeded);
         Assert.NotNull(creation);
@@ -130,7 +130,7 @@ public sealed class HeadlessSavedWorkspaceTests
         creation = null;
         var readOnly = await fixture.Executor.ExecuteAsync(
             new HeadlessAgentRunRequest(fixture.AgentId, "Try write", fixture.WorkspaceId,
-                ExecutionPolicy: AgentExecutionPolicy.Cli(true, true, false, false, [])),
+                ExecutionPolicy: AgentExecutionPolicy.Cli(true, true, false, false)),
             TestContext.Current.CancellationToken);
         Assert.True(readOnly.Succeeded);
         Assert.Equal(FileAccessMode.ReadOnly, creation!.RuntimeResources.HeadlessFileAccessProfile!.AccessMode);
