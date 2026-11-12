@@ -56,7 +56,7 @@ public sealed class UserProfileStoreTests
         ]);
 
         Assert.Equal(2, (await profile.GetAllAsync()).Count);
-        Assert.DoesNotContain("removed", await profile.GetAllAsync());
+        Assert.False((await profile.GetAllAsync()).ContainsKey("removed"));
         var json = await File.ReadAllTextAsync(profile.FilePath);
         Assert.True(json.IndexOf("\"A\"", StringComparison.Ordinal) <
                     json.IndexOf("\"z\"", StringComparison.Ordinal));
