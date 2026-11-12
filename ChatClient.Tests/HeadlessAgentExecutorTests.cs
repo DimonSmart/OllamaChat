@@ -138,7 +138,7 @@ public sealed class HeadlessAgentExecutorTests
             });
         var service = new HeadlessAgentExecutor(new Mock<IAgentTemplateService>().Object,
             catalog.Object, resolver.Object, new AgentRunContextFactory(), runner.Object);
-        var policy = AgentExecutionPolicy.Cli(false, false, false, false, []);
+        var policy = AgentExecutionPolicy.Cli(false, false, false, false);
         var result = await service.ExecuteAsync(
             new HeadlessAgentRunRequest(Guid.Empty, string.Empty,
                 WorkflowId: workflowId, ExecutionPolicy: policy),
