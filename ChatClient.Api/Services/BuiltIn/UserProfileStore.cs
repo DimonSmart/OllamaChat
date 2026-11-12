@@ -94,10 +94,15 @@ internal sealed class UserProfileStore
             throw new JsonException("User profile must be a JSON object.");
 
         var root = parsed.RootElement;
-        needsMigration = root.TryGetProperty("values", out var stored) &&
-                         stored.ValueKind == JsonValueKind.Object;
-
-        return NormalizeJson(needsMigration ? stored : root);
+        var hasValuesObject = root.TryGetProperty("values", out var stored) &&
+                              stored.ValueKind == JsonValueKind.Object;
+        needsMigration = hasValuesObject || root.EnumerateObject().Any(static property =>
+            property.Name.Equals("serverDescription", StringComparison.OrdinalIgnoreCase) ||
+            property.Name.Equals("definitions", StringComparison.OrdinalIgnoreCase) ||
+            property.Name.Equals("memories", StringComparison.OrdinalIgnoreCase));
+        return hasValuesObject ? NormalizeJson(stored) : needsMigration
+            ? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            : NormalizeJson(root);
     }
 
     private static Dictionary<string, string> NormalizeJson(JsonElement json)
