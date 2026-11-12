@@ -375,8 +375,7 @@ public static class CliCommands
         }
 
         var policy = AgentExecutionPolicy.Cli(
-            options.AllowRead, options.AllowWrite, options.AllowShell, options.AllowFileMemory,
-            []);
+            options.AllowRead, options.AllowWrite, options.AllowShell, options.AllowFileMemory);
         if (options.Progress)
             await error.WriteLineAsync("Starting headless execution...");
 
