@@ -1,5 +1,6 @@
 using ChatClient.Infrastructure.Helpers;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.FileProviders;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 
@@ -38,7 +39,7 @@ public sealed class CliConfigurationStore
         try
         {
             // Do not allow a malformed JSON file to silently reset the configuration.
-            var result = new ConfigurationBuilder().AddJsonFile(path, optional: true).Build();
+            var result = AddFile(new ConfigurationBuilder(), path).Build();
             if (result.GetSection("permissions:mcpTools").Exists())
                 throw new CliUsageException("MCP permissions are configured in the Saved Agent, not CLI JSON.");
             return result;
@@ -48,6 +49,10 @@ public sealed class CliConfigurationStore
             throw new CliUsageException("Invalid CLI JSON configuration: " + path);
         }
     }
+
+    private static IConfigurationBuilder AddFile(IConfigurationBuilder builder, string path) =>
+        builder.AddJsonFile(new PhysicalFileProvider(Path.GetDirectoryName(path)!),
+            Path.GetFileName(path), optional: true, reloadOnChange: false);
 
     private static string? Value(IConfiguration config, string key) =>
         config[key] is { Length: > 0 } value ? value : null;
@@ -101,9 +106,7 @@ public sealed class CliConfigurationStore
         IConfiguration combined;
         try
         {
-            combined = new ConfigurationBuilder()
-                .AddJsonFile(GlobalPath, optional: true)
-                .AddJsonFile(ProjectPath, optional: true)
+            combined = AddFile(AddFile(new ConfigurationBuilder(), GlobalPath), ProjectPath)
                 .AddInMemoryCollection(overrides)
                 .Build();
         }
