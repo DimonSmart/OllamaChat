@@ -104,7 +104,7 @@ public sealed class LocalMarkdownPluginService : ILocalMarkdownPluginService
 
             if (Path.IsPathRooted(skillsPath))
                 throw new InvalidDataException("Plugin skills path must be relative to the plugin directory.");
-            var resolved = Path.GetFullPath(Path.Combine(root, skillsPath));
+            var resolved = Path.TrimEndingDirectorySeparator(Path.GetFullPath(Path.Combine(root, skillsPath)));
             var normalizedRoot = Path.TrimEndingDirectorySeparator(root);
             if (!resolved.StartsWith(normalizedRoot + Path.DirectorySeparatorChar, PathComparison))
                 throw new InvalidDataException("Plugin skills path leaves the plugin directory.");
