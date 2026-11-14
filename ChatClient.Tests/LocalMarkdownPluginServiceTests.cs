@@ -106,7 +106,7 @@ public sealed class LocalMarkdownPluginServiceTests
         var skill = Directory.CreateDirectory(Path.Combine(plugin, "skills", skillName));
         Directory.CreateDirectory(Path.Combine(skill.FullName, "references"));
         await File.WriteAllTextAsync(Path.Combine(plugin, ".codex-plugin", "plugin.json"),
-            $$"""{"name":"{{pluginName}}","version":"0.0.0","description":"Local test plugin","skills":"./skills/","unknown":{"extension":true}}""",
+            System.Text.Json.JsonSerializer.Serialize(new { name = pluginName, version = "0.0.0", description = "Local test plugin", skills = "./skills/", unknown = new { extension = true } }),
             TestContext.Current.CancellationToken);
         await File.WriteAllTextAsync(Path.Combine(skill.FullName, "SKILL.md"),
             $"---\nname: {skillName}\ndescription: Sample skill\n---\nRead references/methodology.md.",
