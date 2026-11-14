@@ -19,7 +19,7 @@ public sealed record AgentSessionStateViewModel(
 
 public sealed record AgentSessionBackgroundAgentViewModel(string Name, string Summary, string? ModelName);
 
-public sealed record AgentSessionSkillViewModel(string Name, string Description, string SourcePath, AgentSkillSourceKind SourceKind);
+public sealed record AgentSessionSkillViewModel(string Name, string Description, string SourcePath, AgentSkillSourceKind SourceKind, string? PluginName = null);
 
 public sealed record AgentSessionCompactionViewModel(
     string ProfileName,

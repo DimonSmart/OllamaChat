@@ -1,0 +1,89 @@
+@page "/plugins"
+@using ChatClient.Application.Services
+@using ChatClient.Domain.Models
+@inject ILocalMarkdownPluginService PluginService
+@inject ISnackbar Snackbar
+
+<AppPage Title="Plugins">
+    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Class="mb-3">
+        <MudTextField @bind-Value="directory" Label="Local plugin directory" Placeholder="/path/to/idd-intent" Variant="Variant.Outlined" Margin="Margin.Dense" Style="flex: 1" />
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="Register">Connect plugin</MudButton>
+    </MudStack>
+    <MudText Typo="Typo.caption" Class="mb-3">Plugins are loaded from their original directories. Removing a registration never deletes plugin files.</MudText>
+    <MudDataGrid T="LocalMarkdownPluginInspection" Items="plugins" Dense="true" Hover="true" Bordered="true">
+        <Columns>
+            <TemplateColumn Title="Plugin">
+                <CellTemplate>
+                    <MudText Typo="Typo.body2">@context.Item.Name</MudText>
+                    <MudText Typo="Typo.caption">@context.Item.Description</MudText>
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary">@context.Item.Directory</MudText>
+                </CellTemplate>
+            </TemplateColumn>
+            <TemplateColumn Title="Version"><CellTemplate>@context.Item.Version</CellTemplate></TemplateColumn>
+            <TemplateColumn Title="Skills">
+                <CellTemplate>
+                    <MudText Typo="Typo.body2">@string.Join(", ", context.Item.Skills)</MudText>
+                    <MudText Typo="Typo.caption">@context.Item.Skills.Count skill(s)</MudText>
+                </CellTemplate>
+            </TemplateColumn>
+            <TemplateColumn Title="Diagnostics">
+                <CellTemplate>
+                    @foreach (var message in context.Item.Diagnostics)
+                    {
+                        <MudText Typo="Typo.caption" Color="Color.Error">@message</MudText>
+                    }
+                </CellTemplate>
+            </TemplateColumn>
+            <TemplateColumn Title="Actions">
+                <CellTemplate>
+                    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1">
+                        <MudSwitch T="bool" Value="@context.Item.Enabled" ValueChanged="@((bool value) => Toggle(context.Item.Id, value))" Label="Enabled" Color="Color.Primary" />
+                        <MudTooltip Text="Remove registration (keep source files)">
+                            <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" Size="Size.Small" OnClick="@(() => Remove(context.Item.Id))" />
+                        </MudTooltip>
+                    </MudStack>
+                </CellTemplate>
+            </TemplateColumn>
+        </Columns>
+        <NoRecordsContent><MudText Class="pa-3">No plugins registered.</MudText></NoRecordsContent>
+    </MudDataGrid>
+</AppPage>
+
+@code {
+    private string directory = string.Empty;
+    private List<LocalMarkdownPluginInspection> plugins = [];
+
+    protected override async Task OnInitializedAsync() => await Load();
+
+    private async Task Load()
+    {
+        plugins = (await PluginService.GetAllAsync())
+            .Select(PluginService.Inspect)
+            .OrderBy(x => x.Name)
+            .ThenBy(x => x.Directory)
+            .ToList();
+    }
+
+    private async Task Register()
+    {
+        try
+        {
+            await PluginService.RegisterAsync(directory);
+            directory = string.Empty;
+            await Load();
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private async Task Toggle(Guid id, bool enabled)
+    {
+        try { await PluginService.SetEnabledAsync(id, enabled); await Load(); }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+
+    private async Task Remove(Guid id)
+    {
+        try { await PluginService.RemoveAsync(id); await Load(); }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+}

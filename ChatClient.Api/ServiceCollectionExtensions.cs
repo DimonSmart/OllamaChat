@@ -125,6 +125,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IAgentModeProviderProfileService, AgentModeProviderProfileService>();
         services.AddSingleton<IFileAccessProviderProfileService, FileAccessProviderProfileService>();
         services.AddSingleton<IAgentSkillsProfileService, AgentSkillsProfileService>();
+        services.AddSingleton<ILocalMarkdownPluginService, LocalMarkdownPluginService>();
         services.AddSingleton<ISandboxProfileService, SandboxProfileService>();
         services.AddSingleton<ICompactionProfileService, CompactionProfileService>();
         services.AddSingleton<IRagProviderProfileService, RagProviderProfileService>();

@@ -17,6 +17,7 @@ public sealed class AgentSkillsProfileService(IAgentSkillsProfileRepository repo
             throw new ArgumentException("Profile name is required.", nameof(profile));
         if (all.Any(x => x.Id != exclude && string.Equals(x.Name, profile.Name, StringComparison.OrdinalIgnoreCase)))
             throw new ArgumentException($"A Skills Provider profile named '{profile.Name}' already exists.", nameof(profile));
+        profile.PluginIds = (profile.PluginIds ?? []).Where(id => id != Guid.Empty).Distinct().ToList();
         profile.FileSources ??= [];
         foreach (var source in profile.FileSources)
         { source.Directory = source.Directory?.Trim() ?? string.Empty; source.Patterns = (source.Patterns ?? []).Select(x => x?.Trim()).Where(x => !string.IsNullOrWhiteSpace(x)).Cast<string>().ToList(); if (string.IsNullOrWhiteSpace(source.Directory)) throw new ArgumentException("Skill source directory is required.", nameof(profile)); if (source.Patterns.Count == 0) throw new ArgumentException("Each skill source requires at least one pattern.", nameof(profile)); if (!Path.IsPathFullyQualified(source.Directory) && source.Directory.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar).Any(x => x == "..")) throw new ArgumentException("Relative skill source directories cannot leave the workspace.", nameof(profile)); if (source.Patterns.Any(Path.IsPathFullyQualified)) throw new ArgumentException("Skill patterns must be relative.", nameof(profile)); }

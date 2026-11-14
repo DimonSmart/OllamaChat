@@ -56,7 +56,8 @@ public sealed class HeadlessAgentExecutor(
     IAgentSkillsProfileService? skillProfiles = null,
     IAgentLaunchCapabilityValidator? modelCapabilities = null,
     ILogger<HeadlessAgentExecutor>? logger = null,
-    ISandboxSessionFactory? sandboxSessionFactory = null) : IAgentExecutionService
+    ISandboxSessionFactory? sandboxSessionFactory = null,
+    ILocalMarkdownPluginService? markdownPlugins = null) : IAgentExecutionService
 {
     public async Task<HeadlessAgentRunResult> ExecuteAsync(
         HeadlessAgentRunRequest request, CancellationToken cancellationToken)
@@ -153,6 +154,7 @@ public sealed class HeadlessAgentExecutor(
                 Id = profile.Id,
                 Name = profile.Name,
                 IncludeClaudeSkills = profile.IncludeClaudeSkills,
+                PluginIds = (profile.PluginIds ?? []).ToList(),
                 FileSources = profile.FileSources.Select(source => new SkillFileSource
                 {
                     Directory = source.Directory,
@@ -160,7 +162,7 @@ public sealed class HeadlessAgentExecutor(
                 }).ToList()
             };
             var discovered = await AgentSkillsDiscovery.DiscoverAsync(pinnedSkillsProfile, workspace?.Path,
-                logger ?? NullLogger<HeadlessAgentExecutor>.Instance, cancellationToken);
+                logger ?? NullLogger<HeadlessAgentExecutor>.Instance, cancellationToken, markdownPlugins);
             try
             {
                 hasDiscoveredSkills = discovered.Skills.Count > 0;

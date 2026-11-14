@@ -90,7 +90,8 @@ public sealed class AgenticRuntimeAgentFactory(
     IRagProviderProfileService? ragProviderProfileService = null,
     IAgentTemplateService? agentTemplateService = null,
     IConfiguration? configuration = null,
-    ContextCaptureStore? contextCaptureStore = null)
+    ContextCaptureStore? contextCaptureStore = null,
+    ILocalMarkdownPluginService? markdownPlugins = null)
 {
     internal async Task<HarnessAgentRuntimeDefinition> CreateAsync(
         AgentRunRequest request,
@@ -327,7 +328,7 @@ public sealed class AgenticRuntimeAgentFactory(
                 : ValidateWorkspace(request.RuntimeResources.WorkspacePath);
             var skills = skillsProfile is null
                 ? new AgentSkillsDiscoveryResult([], [], null)
-                : await AgentSkillsDiscovery.DiscoverAsync(skillsProfile, workspacePath, logger, cancellationToken);
+                : await AgentSkillsDiscovery.DiscoverAsync(skillsProfile, workspacePath, logger, cancellationToken, markdownPlugins);
             if (skills.Source is not null)
                 resources.Own(skills.Source);
             if (skills.Skills.Count > 0 && !supportsFunctions)
@@ -402,7 +403,7 @@ public sealed class AgenticRuntimeAgentFactory(
                     compactionProfile!.Name,
                     compaction.Budget.InputBudgetTokens,
                     CompactionPolicySummary.FormatPolicy(compactionProfile)),
-                skills.Skills.Select(x => new AgentSessionSkillViewModel(x.Name, x.Description, x.SourcePath, x.SourceKind)).ToList(),
+                skills.Skills.Select(x => new AgentSessionSkillViewModel(x.Name, x.Description, x.SourcePath, x.SourceKind, x.PluginName)).ToList(),
                 skills.Diagnostics,
                 backgroundDefinitions.Select(definition => new AgentSessionBackgroundAgentViewModel(
                     definition.Agent.Name ?? string.Empty,

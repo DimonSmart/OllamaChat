@@ -1,3 +1,4 @@
+using ChatClient.Application.Services;
 using ChatClient.Domain.Models;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.FileSystemGlobbing;
@@ -5,7 +6,7 @@ using Microsoft.Extensions.FileSystemGlobbing.Abstractions;
 
 namespace ChatClient.Api.Client.Services.Agentic;
 
-internal sealed record DiscoveredAgentSkill(string Name, string Description, string SourcePath, AgentSkillSourceKind SourceKind);
+internal sealed record DiscoveredAgentSkill(string Name, string Description, string SourcePath, AgentSkillSourceKind SourceKind, Guid? PluginId = null, string? PluginName = null);
 internal sealed record AgentSkillsDiscoveryResult(
     IReadOnlyList<DiscoveredAgentSkill> Skills,
     IReadOnlyList<string> Diagnostics,
@@ -18,15 +19,62 @@ internal static class AgentSkillsDiscovery
         AgentSkillsProfile profile,
         string? workspacePath,
         ILogger logger,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        ILocalMarkdownPluginService? markdownPlugins = null)
     {
         List<string> diagnostics = [];
-        List<(string Path, AgentSkillSourceKind Kind)> directories = [];
+        List<(string Path, AgentSkillSourceKind Kind, Guid? PluginId, string? PluginName)> directories = [];
         HashSet<string> seenDirectories = new(OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
-        var sources = profile.FileSources.Where(x => !Path.IsPathFullyQualified(x.Directory)).Select(x => (x, AgentSkillSourceKind.WorkspaceFile))
-            .Concat(profile.IncludeClaudeSkills ? [(new SkillFileSource { Directory = ".claude" + Path.DirectorySeparatorChar + "skills", Patterns = ["**/SKILL.md"] }, AgentSkillSourceKind.Claude)] : [])
-            .Concat(profile.FileSources.Where(x => Path.IsPathFullyQualified(x.Directory)).Select(x => (x, AgentSkillSourceKind.InstalledFile)));
-        foreach (var (source, kind) in sources)
+        var sources = new List<(SkillFileSource Source, AgentSkillSourceKind Kind, Guid? PluginId, string? PluginName)>();
+        sources.AddRange(profile.FileSources.Where(x => !Path.IsPathFullyQualified(x.Directory))
+            .Select(x => (x, AgentSkillSourceKind.WorkspaceFile, (Guid?)null, (string?)null)));
+        if (profile.IncludeClaudeSkills)
+            sources.Add((new SkillFileSource
+            {
+                Directory = ".claude" + Path.DirectorySeparatorChar + "skills",
+                Patterns = ["**/SKILL.md"]
+            }, AgentSkillSourceKind.Claude, null, null));
+        sources.AddRange(profile.FileSources.Where(x => Path.IsPathFullyQualified(x.Directory))
+            .Select(x => (x, AgentSkillSourceKind.InstalledFile, (Guid?)null, (string?)null)));
+
+        if (profile.PluginIds is { Count: > 0 })
+        {
+            if (markdownPlugins is null)
+            {
+                diagnostics.Add("Plugin registry is unavailable; configured plugins were ignored.");
+            }
+            else
+            {
+                var registered = await markdownPlugins.GetAllAsync();
+                var pluginNames = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                foreach (var id in profile.PluginIds.Distinct())
+                {
+                    var registration = registered.FirstOrDefault(x => x.Id == id);
+                    if (registration is null)
+                    {
+                        diagnostics.Add($"Plugin registration '{id}' was not found.");
+                        continue;
+                    }
+                    if (!registration.Enabled)
+                        continue;
+                    var plugin = markdownPlugins.Inspect(registration);
+                    diagnostics.AddRange(plugin.Diagnostics.Select(x => $"Plugin '{registration.Directory}': {x}"));
+                    if (plugin.SkillsDirectory is null || plugin.Diagnostics.Count > 0)
+                        continue;
+                    if (pluginNames.TryGetValue(plugin.Name, out var previous))
+                    {
+                        diagnostics.Add($"Plugin '{plugin.Name}' from '{plugin.Directory}' ignored: same plugin name already loaded from '{previous}'.");
+                        continue;
+                    }
+                    pluginNames.Add(plugin.Name, plugin.Directory);
+                    sources.Add((new SkillFileSource
+                    {
+                        Directory = plugin.SkillsDirectory, Patterns = ["**/SKILL.md"]
+                    }, AgentSkillSourceKind.Plugin, plugin.Id, plugin.Name));
+                }
+            }
+        }
+        foreach (var (source, kind, pluginId, pluginName) in sources)
         {
             if (string.IsNullOrWhiteSpace(workspacePath) && kind != AgentSkillSourceKind.InstalledFile)
             { diagnostics.Add($"Ignoring skill source '{source.Directory}': a workspace is required."); continue; }
@@ -47,7 +95,7 @@ internal static class AgentSkillsDiscovery
                     !Path.GetFileName(skillFilePath).Equals("SKILL.md", StringComparison.OrdinalIgnoreCase))
                     continue;
                 if (seenDirectories.Add(skillDirectory))
-                    directories.Add((skillDirectory, kind));
+                    directories.Add((skillDirectory, kind, pluginId, pluginName));
             }
         }
 
@@ -89,7 +137,9 @@ internal static class AgentSkillsDiscovery
                         skill.Frontmatter.Name,
                         skill.Frontmatter.Description,
                         sourcePath,
-                        directory.Kind));
+                        directory.Kind,
+                        directory.PluginId,
+                        directory.PluginName));
                 }
 
                 if (selected)
