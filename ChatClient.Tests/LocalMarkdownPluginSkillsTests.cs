@@ -66,7 +66,7 @@ public sealed class LocalMarkdownPluginSkillsTests
             var first = await service.RegisterAsync(plugin);
             var second = await service.RegisterAsync(other);
 
-            var workspaceSkill = Directory.CreateDirectory(Path.Combine(root, "workspace", "skills", "local"));
+            var workspaceSkill = Directory.CreateDirectory(Path.Combine(root, "workspace", "skills", "idd-help"));
             await File.WriteAllTextAsync(Path.Combine(workspaceSkill.FullName, "SKILL.md"),
                 "---\nname: idd-help\ndescription: Workspace wins\n---\nLocal.",
                 TestContext.Current.CancellationToken);
