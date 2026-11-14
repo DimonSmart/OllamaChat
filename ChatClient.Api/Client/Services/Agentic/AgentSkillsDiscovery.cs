@@ -76,7 +76,8 @@ internal static class AgentSkillsDiscovery
         }
         foreach (var (source, kind, pluginId, pluginName) in sources)
         {
-            if (string.IsNullOrWhiteSpace(workspacePath) && kind != AgentSkillSourceKind.InstalledFile)
+            if (string.IsNullOrWhiteSpace(workspacePath) &&
+                kind != AgentSkillSourceKind.InstalledFile && kind != AgentSkillSourceKind.Plugin)
             { diagnostics.Add($"Ignoring skill source '{source.Directory}': a workspace is required."); continue; }
             var root = Path.GetFullPath(Path.IsPathFullyQualified(source.Directory) ? source.Directory : Path.Combine(workspacePath!, source.Directory));
             if (!Directory.Exists(root))
